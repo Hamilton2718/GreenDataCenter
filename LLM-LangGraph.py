@@ -2,7 +2,9 @@
 import operator
 import json
 import os
-from typing import TypedDict, Annotated, List, Dict
+from typing import TypedDict, Annotated, List, Dict, Optional
+import pandas as pd
+from pycaret.time_series import load_model, predict_model
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 from langchain_core.prompts import ChatPromptTemplate
@@ -43,8 +45,13 @@ class DataCenterState(TypedDict):
     human_feedback: str  # 人工反馈意见
     human_approved: bool # 是否通过人工审核
 
+    # 新增：用于存储数据中心负载预测结果
+    load_prediction_results: Optional[pd.DataFrame]
+    # 修改：用于存储风光出力预测结果
+    renewable_prediction_results: Optional[pd.DataFrame]
 
-# 2. 初始化大模型 (使用 XSimple 提供的模型接口或兼容接口)
+
+# 2. 初始化大模型 
 # 请替换为实际可用的 API Key 和 Base URL
 # 确保在运行前设置 DASHSCOPE_API_KEY 环境变量
 llm = ChatOpenAI(
@@ -54,147 +61,92 @@ llm = ChatOpenAI(
 )
 
 
-# --- 节点定义 ---
+# 3. 定义 LangGraph 的节点
 
-# 节点 1: 基础数据初步分析
+# 节点 1: 初步分析节点
 def perform_initial_analysis(state: DataCenterState) -> DataCenterState:
-    """对绿电占比、负载率、碳排强度、PUE目标等进行初步评估"""
-    green_ratio = state["predicted_green_energy_ratio"]
-    load_factor = state["current_datacenter_load_factor"]
-    carbon_intensity_grid = state["grid_carbon_intensity"]
-    pue_target = state["target_pue"]
-    soc = state["energy_storage_soc_current_percent"]
-    grid_stability = state["grid_stability_index"]
+    """模拟对数据中心当前状态的初步分析"""
+    print("--- 正在进行初步分析 ---")
+    # 实际场景中，这里会调用API或查询数据库
+    state["predicted_green_energy_ratio"] = 0.65  # 预测绿电占比
+    state["current_datacenter_load_factor"] = 0.80  # 当前数据中心负载率
+    state["grid_carbon_intensity"] = 500  # 电网碳排强度 gCO2/kWh
+    state["target_pue"] = 1.25  # PUE目标
+    state["energy_storage_soc_current_percent"] = 0.60  # 储能SOC
+    state["grid_stability_index"] = 0.95  # 电网稳定性指数
+    state["critical_workload_priority"] = 0.9  # 关键工作负载优先级
 
-    # 简化的综合评估逻辑
-    green_availability_score = green_ratio * 100
-    load_balance_score = (1 - abs(0.5 - load_factor)) * 100  # 负载越接近50%越均衡，分数越高
-    carbon_impact_score = max(0, 100 - carbon_intensity_grid / 5)  # 碳排越低分数越高
-    pue_efficiency_score = max(0, (2.0 - pue_target) * 50)  # PUE越接近1.0分数越高
-    grid_resilience_score = grid_stability * 100
-
-    analysis = {
-        "green_availability_score": green_availability_score,
-        "load_balance_score": load_balance_score,
-        "carbon_impact_score": carbon_impact_score,
-        "pue_efficiency_score": pue_efficiency_score,
-        "grid_resilience_score": grid_resilience_score,
-        "overall_score": (
-                                     green_availability_score + load_balance_score + carbon_impact_score + pue_efficiency_score + grid_resilience_score) / 5,
-        "urgent_action_needed": load_factor > 0.9 or green_ratio < 0.2 or grid_stability < 0.3  # 负载过高、绿电严重不足或电网不稳定
-    }
-
-    state["analysis_result"] = analysis
+    # 将分析结果存入消息列表
     state["messages"].append(
-        AIMessage(content=f"✅ 数据中心初步分析完成: 综合评分 {analysis['overall_score']:.2f}")
+        AIMessage(content="✅ 初步分析完成，数据中心状态已获取。")
     )
     return state
 
 
-# 节点 2: 迁移决策 (结合硬逻辑，简化为是否需要外部资源)
+# 节点 2: 迁移路径规划节点
 def plan_migration_path(state: DataCenterState) -> DataCenterState:
-    """根据负载率、绿电占比和电网稳定性规划是否需要外部资源或迁移"""
-    load_factor = state["current_datacenter_load_factor"]
-    green_ratio = state["predicted_green_energy_ratio"]
-    grid_stability = state["grid_stability_index"]
-
-    if load_factor > 0.85 and green_ratio < 0.3:
-        path = ["Consider_External_Green_Cloud", "Migrate_Flexible_Workloads"]
-        msg_content = "✅ 迁移路径规划完成: 负载高且绿电不足，建议考虑外部绿色云服务或迁移灵活工作负载。"
-    elif grid_stability < 0.5:
-        path = ["Prioritize_Local_Stability_Solutions_First"]
-        msg_content = "✅ 迁移路径规划完成: 电网稳定性差，优先本地稳定性方案，谨慎对外迁移。"
+    """根据数据中心状态，规划工作负载迁移或资源调度路径"""
+    print("--- 正在规划迁移或资源路径 ---")
+    # 这是一个简化的决策逻辑
+    if state["grid_carbon_intensity"] > 450 and state["predicted_green_energy_ratio"] < 0.7:
+        path = "建议将部分非核心计算任务迁移至其他可用区或云端，以降低本地碳排放。"
+    elif state["current_datacenter_load_factor"] > 0.85:
+        path = "数据中心负载较高，建议启动备用服务器资源或优化现有资源分配。"
     else:
-        path = ["No_External_Migration_Needed"]
-        msg_content = "✅ 迁移路径规划完成: 当前无需外部迁移，可在本地优化。"
+        path = "当前状态稳定，无需进行大规模迁移。"
 
     state["migration_path"] = path
-    state["messages"].append(AIMessage(content=msg_content))
+    state["messages"].append(
+        AIMessage(content=f"✅ 迁移/资源路径规划完成: {path}")
+    )
     return state
 
 
-# 节点 3: 储能调度策略
+# 节点 3: 储能策略规划节点
 def plan_energy_storage(state: DataCenterState) -> DataCenterState:
-    """根据预测绿电、荷电状态和电网稳定性制定储能设备的充放电策略"""
-    green_ratio = state["predicted_green_energy_ratio"]
-    carbon_intensity_grid = state["grid_carbon_intensity"]
+    """根据电网稳定性和绿电比例，制定储能系统充放电策略"""
+    print("--- 正在规划储能策略 ---")
     soc = state["energy_storage_soc_current_percent"]
-    grid_stability = state["grid_stability_index"]
+    grid_stable = state["grid_stability_index"] > 0.9
+    green_high = state["predicted_green_energy_ratio"] > 0.6
 
-    strategy = {
-        "charge_periods": [],
-        "discharge_periods": [],
-        "capacity_utilization": {},
-        "expected_grid_support": "None"
-    }
-
-    # 根据绿电、碳排、SOC和电网稳定性制定充放电策略 (示例逻辑)
-    if green_ratio > 0.6 and soc < 80 and grid_stability > 0.7:  # 绿电充足，储能未满，电网稳定
-        strategy["charge_periods"] = ["10:00-14:00 (光伏高峰)", "02:00-05:00 (风电高峰)"]
-        strategy["discharge_periods"] = ["18:00-22:00 (用电高峰)"]
-        strategy["capacity_utilization"] = {"green_energy_buffering": "60%", "peak_shaving": "40%"}
-        strategy["expected_grid_support"] = "Primarily self-consumption, grid support during peak times."
-    elif soc > 20 and grid_stability < 0.5:  # 储能有余量，电网不稳定
-        strategy["charge_periods"] = []  # 优先放电稳定电网
-        strategy["discharge_periods"] = ["Immediate (电网不稳定)", "18:00-22:00 (用电高峰)"]
-        strategy["capacity_utilization"] = {"grid_stabilization": "70%", "emergency_backup": "30%"}
-        strategy["expected_grid_support"] = "Active grid stabilization and frequency regulation."
-    else:  # 绿电不足或储能告急
-        strategy["charge_periods"] = ["00:00-06:00 (低谷电价/补电)"]
-        strategy["discharge_periods"] = ["09:00-12:00 (高峰用电)", "18:00-21:00 (晚高峰)"]
-        strategy["capacity_utilization"] = {"peak_shaving": "70%", "emergency_backup": "30%"}
-        strategy["expected_grid_support"] = "Minimal, focused on local peak shaving."
-
-    strategy[
-        "estimated_carbon_avoidance_gCO2"] = f"{(100 - soc) * green_ratio * 0.5 * carbon_intensity_grid:.2f}"  # 模拟碳避免量
+    strategy = {}
+    if green_high and soc < 0.8:
+        strategy["action"] = "charge"
+        strategy["description"] = "绿电充足，建议储能系统充电，存储多余能量。"
+    elif not grid_stable and soc > 0.4:
+        strategy["action"] = "discharge"
+        strategy["description"] = "电网不稳定，建议储能系统放电，保障关键负载。"
+    elif state["current_datacenter_load_factor"] > 0.8 and soc > 0.5:
+        strategy["action"] = "discharge_peak_shaving"
+        strategy["description"] = "数据中心负载处于高峰，建议储能放电以实现削峰填谷，降低电网压力。"
+    else:
+        strategy["action"] = "standby"
+        strategy["description"] = "储能系统待命，根据实时情况调整。"
 
     state["energy_storage_strategy"] = strategy
     state["messages"].append(
-        AIMessage(content="✅ 储能调度策略制定完成")
+        AIMessage(content=f"✅ 储能策略规划完成: {strategy['description']}")
     )
     return state
 
 
-# 节点 4: 绿电分配方案
+# 节点 4: 绿电分配节点
 def allocate_green_energy(state: DataCenterState) -> DataCenterState:
-    """
-    根据预测绿电占比、负载率和关键工作负载优先级制定绿电分配方案。
-    """
-    green_ratio = state["predicted_green_energy_ratio"]
-    load_factor = state["current_datacenter_load_factor"]
+    """根据关键负载优先级，分配绿色电力"""
+    print("--- 正在分配绿色电力 ---")
     critical_priority = state["critical_workload_priority"]
+    green_ratio = state["predicted_green_energy_ratio"]
+
+    # 简化分配逻辑
+    critical_load_alloc = min(1.0, green_ratio * (1 + (critical_priority - 0.5)))
+    non_critical_load_alloc = green_ratio * (1 - (critical_priority - 0.5))
 
     allocation = {
-        "priority_workloads": {},
-        "flexible_workloads": {},
-        "energy_storage_allocation": f"{min(0.2, green_ratio * 0.3) * 100:.1f}%",  # 固定一部分绿电给储能
-        "total_green_usage_target": f"{green_ratio * 100:.1f}%",
-        "recommendation": ""
+        "critical_workloads_green_supply_ratio": round(critical_load_alloc, 2),
+        "non_critical_workloads_green_supply_ratio": round(non_critical_load_alloc, 2),
+        "description": f"优先为关键负载分配 {critical_load_alloc:.0%} 的绿电，其余负载分配 {non_critical_load_alloc:.0%}。"
     }
-
-    # 考虑关键工作负载优先级
-    # 假设关键负载的绿电分配上限与优先级成正比，且不超过绿电总量的某个比例
-    critical_green_share = min(green_ratio * (0.4 + critical_priority * 0.3), 0.7)  # 关键负载最高占用70%绿电
-    flexible_green_share = max(0.0, green_ratio - critical_green_share) - float(
-        allocation["energy_storage_allocation"].replace('%', '')) / 100
-
-    allocation["priority_workloads"] = {
-        "AI_ML_training_critical": f"{critical_green_share * 0.6 * 100:.1f}%",
-        "core_business_services": f"{critical_green_share * 0.4 * 100:.1f}%"
-    }
-
-    allocation["flexible_workloads"] = {
-        "batch_processing": f"{max(0.0, flexible_green_share * 0.5) * 100:.1f}%",
-        "data_analytics": f"{max(0.0, flexible_green_share * 0.5) * 100:.1f}%"
-    }
-
-    # 调度建议
-    if green_ratio > 0.7 and load_factor < 0.6:
-        allocation["recommendation"] = "绿电充足且负载适中，可优先分配给高价值和碳敏感型工作负载，考虑增加储能充电。"
-    elif green_ratio > 0.4 and load_factor < 0.8:
-        allocation["recommendation"] = "绿电适中，负载正常，维持当前分配策略，灵活调度以平衡绿电使用和成本。"
-    else:
-        allocation["recommendation"] = "绿电不足或负载过高，建议延迟非关键任务，或利用储能弥补绿电缺口，并积极寻找外部绿色算力支持。"
 
     state["green_energy_allocation"] = allocation
     state["messages"].append(
@@ -203,82 +155,127 @@ def allocate_green_energy(state: DataCenterState) -> DataCenterState:
     return state
 
 
-# 节点 5: LLM 智能分析节点
-def llm_reasoning_node(state: DataCenterState) -> DataCenterState:
-    """
-    利用大模型对上述所有技术参数进行综合评估并输出深度建议。
-    修改后的提示词将融入“高校电力电子选题”的视角，更关注技术细节和优化潜力。
-    """
-
-    prompt = ChatPromptTemplate.from_template("""
-    你是一位精通电力电子技术和绿色能源系统集成的资深专家，专门研究高校电力电子相关选题。
-    根据以下数据中心实时运行数据和初步的调度结果，请提供一段专业的调度分析和优化建议（约250字）。
-    请特别结合**电力电子技术**，深入分析和提出优化措施，覆盖以下关键领域：
-
-    1.  **绿电高质量并网与功率质量**: 在当前预测绿电占比和电网稳定性下，如何确保绿电高效稳定接入？需要哪些电力电子变换器（如逆变器、APF）来保障数据中心内部的功率质量？
-    2.  **储能系统最大化价值**: 基于当前储能SOC，如何通过电力电子DCDC/PCS控制优化储能系统的充放电策略，以实现削峰填谷、平抑绿电波动，并延长电池寿命？
-    3.  **负载侧精细化能效与动态响应**: 结合当前负载率和PUE目标，电力电子在服务器电源、PDU等负载侧设备上如何进一步优化（如动态电压频率调节、多级转换架构），以降低损耗、提高能效，同时满足关键工作负载的优先级需求？
-    4.  **整体系统协同优化**: 如何通过智能控制器将绿电、储能、负载和电网互动（Grid-Interactive）的电力电子子系统协同起来，实现数据中心整体PUE和碳排放的最低化？
-
-    当前数据概览：
-    - 预测绿电占比: {green_ratio}%
-    - 当前数据中心负载率: {load_factor}%
-    - 电网碳排强度: {carbon_intensity_grid} gCO2/kWh
-    - 数据中心PUE目标: {pue_target}
-    - 储能SOC: {soc_percent}%
-    - 电网稳定性指数: {grid_stability_index} (1为稳定，0为不稳定)
-    - 关键工作负载优先级: {critical_priority}
-    - 预估迁移路径: {path}
-    - 绿电分配方案: {allocation}
-    - 储能策略: {storage_strategy}
-    - 初步分析结果: {analysis}
-
-    在你的建议中，请指出当前方案在哪些方面可以进一步利用电力电子技术进行优化，并提出可行的电力电子研究方向建议。
-    """)
-
-    chain = prompt | llm
-    response = chain.invoke({
-        "green_ratio": f"{state['predicted_green_energy_ratio'] * 100:.1f}",
-        "load_factor": f"{state['current_datacenter_load_factor'] * 100:.1f}",
-        "carbon_intensity_grid": f"{state['grid_carbon_intensity']}",
-        "pue_target": f"{state['target_pue']:.2f}",
-        "soc_percent": f"{state['energy_storage_soc_current_percent']:.1f}",
-        "grid_stability_index": f"{state['grid_stability_index']:.2f}",
-        "critical_priority": f"{state['critical_workload_priority']:.2f}",
-        "path": state["migration_path"],
-        "allocation": json.dumps(state["green_energy_allocation"], ensure_ascii=False, indent=2),
-        "storage_strategy": json.dumps(state["energy_storage_strategy"], ensure_ascii=False, indent=2),
-        "analysis": json.dumps(state["analysis_result"], ensure_ascii=False, indent=2)
-    })
-
-    state["llm_insights"] = response.content
-    state["messages"].append(AIMessage(content=f"✅ 大模型智能分析完成"))
-    state["messages"].append(AIMessage(content=f"大模型洞察 (电力电子优化视角): {response.content}"))
+# 节点 5: 数据中心负载预测节点
+def load_prediction_node(state: DataCenterState) -> DataCenterState:
+    """加载并运行预训练的数据中心负载预测模型 (load.pkl)"""
+    print("--- 正在调用数据中心负载预测模型 --- ")
+    try:
+        model = load_model('load', verbose=False)
+        predictions = predict_model(model)
+        print("--- ✅ 数据中心负载预测成功 ---")
+        state["load_prediction_results"] = predictions
+        state["messages"].append(AIMessage(content="✅ 负载预测模型调用成功，生成了未来24小时的预测数据。"))
+    except Exception as e:
+        error_message = f"--- ❌ 数据中心负载预测失败: {e} ---"
+        print(error_message)
+        state["load_prediction_results"] = pd.DataFrame({"error": [error_message]})
+        state["messages"].append(AIMessage(content=error_message))
     return state
 
 
-# 节点 6: 生成最终方案
+# 节点 6: 风光出力预测节点
+def renewable_prediction_node(state: DataCenterState) -> DataCenterState:
+    """加载并运行预训练的风光出力预测模型 (power.pkl)"""
+    print("--- 正在调用风光出力预测模型 --- ")
+    try:
+        model = load_model('power', verbose=False)
+        predictions = predict_model(model)
+        print("--- ✅ 风光出力预测成功 ---")
+        state["renewable_prediction_results"] = predictions
+        state["messages"].append(AIMessage(content="✅ 风光出力预测模型调用成功，生成了未来24小时的预测数据。"))
+    except Exception as e:
+        error_message = f"--- ❌ 风光出力预测失败: {e} ---"
+        print(error_message)
+        state["renewable_prediction_results"] = pd.DataFrame({"error": [error_message]})
+        state["messages"].append(AIMessage(content=error_message))
+    return state
+
+
+# 节点 7: LLM 智能分析节点
+def llm_reasoning_node(state: DataCenterState) -> DataCenterState:
+    # 根据人工反馈调整分析
+    if state.get("human_feedback"):
+        print("--- 正在根据人工反馈重新进行智能分析 ---")
+        feedback_prompt = f"\n重要补充：请根据以下用户反馈调整你的建议：'{state['human_feedback']}'"
+    else:
+        print("--- 正在进行首次智能分析 (首席架构师视角) ---")
+        feedback_prompt = ""
+
+    prompt = ChatPromptTemplate.from_template("""你是一位零碳数据中心首席架构师。你的任务是根据下面提供的24小时“负载预测”和“风光出力预测”，制定一份清晰、可执行的调度方案。
+
+**负载预测 (需求):**
+{load_data}
+
+**风光出力预测 (供应):**
+{renewable_data}
+
+**你的方案必须简洁地回答以下核心问题：**
+1.  **供需关系**: 哪些时段绿电富余，哪些时段存在缺口？总缺口是多少？
+2.  **采购策略**: 针对总缺口，应购买绿电(PPA)还是绿证(REC)？为什么？
+3.  **调度指令**: 明确储能系统在各时段的充/放电策略，以及何时启动电网购电。
+
+**当前状态参考:**
+- 储能SOC: {soc_percent}%
+- PUE目标: {pue_target}
+
+**输出要求：**
+请直接以结构化的清单形式输出方案，不要添加任何无关的开头、结尾、签名或日期。
+{feedback_prompt}
+""")
+
+    chain = prompt | llm
+
+    # 安全地获取和格式化预测数据
+    load_df = state.get("load_prediction_results")
+    renewable_df = state.get("renewable_prediction_results")
+
+    load_str = load_df.to_string() if load_df is not None and not load_df.empty else "(无负载预测数据)"
+    renewable_str = renewable_df.to_string() if renewable_df is not None and not renewable_df.empty else "(无风光出力预测数据)"
+
+    response = chain.invoke({
+        "load_data": load_str,
+        "renewable_data": renewable_str,
+        "soc_percent": f"{state['energy_storage_soc_current_percent']:.1f}",
+        "pue_target": f"{state['target_pue']:.2f}",
+        "feedback_prompt": feedback_prompt
+    })
+
+    state["llm_insights"] = response.content
+    state["messages"].append(AIMessage(content=f"✅ 大模型智能分析完成 (首席架构师视角)"))
+    state["messages"].append(AIMessage(content=f"大模型洞察: {response.content}"))
+    return state
+
+
+# 节点 8: 生成最终方案
 def generate_final_plan(state: DataCenterState) -> DataCenterState:
-    """整合所有策略和建议，生成最终调度方案"""
+    """整合所有策略和建议，生成最终的零碳全方位调度方案"""
+    print("--- 正在生成最终的零碳全方位调度方案 ---")
+
+    # 安全地处理可能不存在的预测结果
+    load_df = state.get("load_prediction_results")
+    renewable_df = state.get("renewable_prediction_results")
+    load_records = load_df.to_dict('records') if load_df is not None and not load_df.empty else "N/A"
+    renewable_records = renewable_df.to_dict('records') if renewable_df is not None and not renewable_df.empty else "N/A"
 
     final_plan = {
         "timestamp": "2024-XX-XX HH:MM:SS",  # 实际应用中替换为当前时间
-        "datacenter_status_overview": {
+        "plan_summary": "未来24小时零碳全方位调度方案",
+        "load_forecast_24h": load_records,
+        "renewable_energy_forecast_24h": renewable_records,
+        "chief_architect_recommendations": state["llm_insights"],
+        "technical_implementation_details": {
+            "migration_or_resource_plan": state["migration_path"],
+            "energy_storage_strategy": state["energy_storage_strategy"],
+            "green_energy_allocation_detail": state["green_energy_allocation"],
+        },
+        "initial_conditions": {
             "predicted_green_energy_ratio": f"{state['predicted_green_energy_ratio'] * 100:.1f}%",
             "current_load_factor": f"{state['current_datacenter_load_factor'] * 100:.1f}%",
             "grid_carbon_intensity": f"{state['grid_carbon_intensity']} gCO2/kWh",
             "target_PUE": f"{state['target_pue']:.2f}",
             "energy_storage_SOC": f"{state['energy_storage_soc_current_percent']:.1f}%",
             "grid_stability": f"{state['grid_stability_index']:.2f}"
-        },
-        "migration_or_external_resource_plan": state["migration_path"],
-        "energy_storage_strategy": state["energy_storage_strategy"],
-        "green_energy_allocation_detail": state["green_energy_allocation"],  # 绿电分配方案
-        "compliance_and_impact": {
-            "pue_target_consideration": f"Current PUE target {state['target_pue']:.2f} needs continuous monitoring.",
-            "carbon_reduction_focus": "Emphasis on maximizing green energy use and efficient storage."
-        },
-        "expert_advice_from_power_electronics_perspective": state["llm_insights"]  # 包含LLM的深度建议
+        }
     }
 
     state["final_plan"] = final_plan
@@ -288,18 +285,33 @@ def generate_final_plan(state: DataCenterState) -> DataCenterState:
     return state
 
 
-# 节点 7: 人工审核节点
+# 节点 9: 人工审核节点
 def human_review_node(state: DataCenterState) -> DataCenterState:
     """展示最终方案并等待人工确认"""
     plan = state["final_plan"]
+    load_predictions = state.get("load_prediction_results")
+    renewable_predictions = state.get("renewable_prediction_results")
 
     print("\n" + "=" * 30 + " 人工审核环节 " + "=" * 30)
-    print("当前生成的最终方案如下 (摘要)：")
-    print("绿电分配:")
-    print(json.dumps(plan["green_energy_allocation_detail"], indent=2, ensure_ascii=False))
-    print("\n专家建议摘要:")
-    print(plan["expert_advice_from_power_electronics_perspective"][:200] + "...")
-    print("=" * 60)
+    print("请审核以下由【首席架构师 Agent】生成的调度方案：")
+
+    # 打印负载预测结果
+    print("\n--- 未来24小时数据中心负载预测 --- ")
+    if load_predictions is not None and not load_predictions.empty:
+        print(load_predictions.to_string())
+    else:
+        print("(无负载预测数据或预测失败)")
+
+    # 打印风光出力预测结果
+    print("\n--- 未来24小时风光出力预测 --- ")
+    if renewable_predictions is not None and not renewable_predictions.empty:
+        print(renewable_predictions.to_string())
+    else:
+        print("(无风光出力预测数据或预测失败)")
+
+    print("\n--- 首席架构师建议摘要 --- ")
+    print(plan["chief_architect_recommendations"])
+    print("=" * 70)
 
     # 获取用户输入
     print("\n>>> 请审核方案 <<<")
@@ -327,6 +339,8 @@ def create_scheduling_graph():
     workflow.add_node("migrate", plan_migration_path)
     workflow.add_node("storage", plan_energy_storage)
     workflow.add_node("allocate_green", allocate_green_energy)
+    workflow.add_node("load_prediction", load_prediction_node) # 新增负载预测节点
+    workflow.add_node("renewable_prediction", renewable_prediction_node)
     workflow.add_node("llm_reasoning", llm_reasoning_node)
     workflow.add_node("final_plan", generate_final_plan)
     workflow.add_node("human_review", human_review_node)
@@ -338,7 +352,9 @@ def create_scheduling_graph():
     workflow.add_edge("analyze", "migrate")
     workflow.add_edge("migrate", "storage")
     workflow.add_edge("storage", "allocate_green")
-    workflow.add_edge("allocate_green", "llm_reasoning")
+    workflow.add_edge("allocate_green", "load_prediction")
+    workflow.add_edge("load_prediction", "renewable_prediction")
+    workflow.add_edge("renewable_prediction", "llm_reasoning")
     workflow.add_edge("llm_reasoning", "final_plan")
     workflow.add_edge("final_plan", "human_review")
 
@@ -391,7 +407,7 @@ def main():
             pass
     # === 显示结束 ===
 
-    # >>>>>>>>>>>>>>>>> 关键输入数据: 根据高校电力电子选题视角输入相关数据 <<<<<<<<<<<<<<<<<
+    # >>>>>>>>>>>>>>>>> 关键输入数据 <<<<<<<<<<<<<<<<<
     initial_state = {
         "predicted_green_energy_ratio": 0.70,  # 预测绿电占比 70%
         "current_datacenter_load_factor": 0.60,  # 当前数据中心负载率 60%
@@ -400,11 +416,11 @@ def main():
         "energy_storage_soc_current_percent": 75.0,  # 当前储能SOC 75%
         "grid_stability_index": 0.85,  # 电网稳定性指数 0.85 (较稳定)
         "critical_workload_priority": 0.9,  # 关键工作负载优先级 0.9 (高优先)
-        "messages": [HumanMessage(content="启动数据中心绿色调度流程 (电力电子优化视角)")]
+        "messages": [HumanMessage(content="启动数据中心绿色调度流程 ")]
     }
 
     print("\n" + "=" * 60)
-    print(" XSimple 绿色算力调度流程启动 (电力电子优化视角) ")
+    print("绿色算力调度流程启动")
     print("=" * 60)
     print("输入参数:")
     for key, value in initial_state.items():
@@ -425,10 +441,10 @@ def main():
         print("\n专家LLM建议 (侧重电力电子优化):")
         print(result["final_plan"]["expert_advice_from_power_electronics_perspective"])
 
-    print("\n[关键执行日志]")
-    for msg in result["messages"]:
-        if isinstance(msg, AIMessage) and "大模型洞察 (电力电子优化视角)" not in msg.content:
-            print(f" - {msg.content}")
+    # print("\n[关键执行日志]")
+    # for msg in result["messages"]:
+    #     if isinstance(msg, AIMessage) and "大模型洞察 (电力电子优化视角)" not in msg.content:
+    #         print(f" - {msg.content}")
 
 
 if __name__ == "__main__":
