@@ -15365,3 +15365,41 @@ Setuptools is replacing distutils. Support for replacing an already imported dis
 2026-03-04 08:44:01,407:INFO:load_model(model_name=load, platform=None, authentication=None, verbose=False)
 2026-03-04 08:44:02,559:INFO:Initializing load_model()
 2026-03-04 08:44:02,559:INFO:load_model(model_name=power, platform=None, authentication=None, verbose=False)
+2026-03-04 13:30:34,688:WARNING:
+'prophet' is a soft dependency and not included in the pycaret installation. Please run: `pip install prophet` to install.
+2026-03-04 13:31:19,159:INFO:Initializing load_model()
+2026-03-04 13:31:19,160:INFO:load_model(model_name=load, platform=None, authentication=None, verbose=False)
+2026-03-04 13:31:20,545:INFO:Initializing load_model()
+2026-03-04 13:31:20,545:INFO:load_model(model_name=power, platform=None, authentication=None, verbose=False)
+2026-03-04 13:36:51,999:WARNING:
+'prophet' is a soft dependency and not included in the pycaret installation. Please run: `pip install prophet` to install.
+2026-03-04 13:37:30,475:INFO:Initializing load_model()
+2026-03-04 13:37:30,476:INFO:load_model(model_name=load, platform=None, authentication=None, verbose=False)
+2026-03-04 13:37:31,629:INFO:Initializing load_model()
+2026-03-04 13:37:31,629:INFO:load_model(model_name=power, platform=None, authentication=None, verbose=False)
+2026-03-06 11:02:07,914:WARNING:
+'prophet' is a soft dependency and not included in the pycaret installation. Please run: `pip install prophet` to install.
+2026-03-06 11:04:15,435:WARNING:
+'prophet' is a soft dependency and not included in the pycaret installation. Please run: `pip install prophet` to install.
+2026-03-06 11:04:52,795:INFO:Initializing load_model()
+2026-03-06 11:04:52,797:INFO:load_model(model_name=load, platform=None, authentication=None, verbose=False)
+2026-03-06 11:04:55,054:INFO:Initializing load_model()
+2026-03-06 11:04:55,056:INFO:load_model(model_name=power, platform=None, authentication=None, verbose=False)
+2026-03-06 20:03:58,002:WARNING:
+'prophet' is a soft dependency and not included in the pycaret installation. Please run: `pip install prophet` to install.
+2026-03-06 20:04:36,505:INFO:Initializing load_model()
+2026-03-06 20:04:36,506:INFO:load_model(model_name=load, platform=None, authentication=None, verbose=False)
+2026-03-06 20:04:39,027:INFO:Initializing load_model()
+2026-03-06 20:04:39,027:INFO:load_model(model_name=power, platform=None, authentication=None, verbose=False)
+2026-03-06 20:10:10,342:WARNING:
+'prophet' is a soft dependency and not included in the pycaret installation. Please run: `pip install prophet` to install.
+2026-03-06 20:10:59,771:INFO:Initializing load_model()
+2026-03-06 20:10:59,772:INFO:load_model(model_name=load, platform=None, authentication=None, verbose=False)
+2026-03-06 20:11:00,944:INFO:Initializing load_model()
+2026-03-06 20:11:00,944:INFO:load_model(model_name=power, platform=None, authentication=None, verbose=False)
+2026-03-06 20:16:18,067:WARNING:
+'prophet' is a soft dependency and not included in the pycaret installation. Please run: `pip install prophet` to install.
+2026-03-06 20:17:01,812:INFO:Initializing load_model()
+2026-03-06 20:17:01,812:INFO:load_model(model_name=load, platform=None, authentication=None, verbose=False)
+2026-03-06 20:17:02,981:INFO:Initializing load_model()
+2026-03-06 20:17:02,981:INFO:load_model(model_name=power, platform=None, authentication=None, verbose=False)
