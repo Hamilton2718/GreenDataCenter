@@ -1,5 +1,6 @@
 
 import os
+from typing import List, Dict, Optional
 from tqdm import tqdm
 
 # --- LangChain Core Components ---
@@ -9,8 +10,10 @@ from langchain_community.embeddings import SentenceTransformerEmbeddings
 from langchain_community.document_loaders import PyPDFLoader, UnstructuredWordDocumentLoader
 
 # --- Configuration ---
-KNOWLEDGE_BASE_PATH = "knowledge_base"
-VECTOR_STORE_PATH = "vector_store/faiss_index"
+# 使用绝对路径，确保从任意工作目录调用都能正确找到文件
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+KNOWLEDGE_BASE_PATH = os.path.join(_BASE_DIR, "knowledge_base")
+VECTOR_STORE_PATH = os.path.join(_BASE_DIR, "vector_store", "faiss_index")
 
 # 使用一个开源的、效果优秀的支持中文的嵌入模型
 # 第一次运行时，它会自动从HuggingFace下载模型文件（约400-500MB）
@@ -110,6 +113,164 @@ def build_or_load_vector_store(rebuild: bool = False):
         print("✅ 向量数据库加载成功。")
         
     return vector_store
+
+
+# ============================================================
+# RAG 单例管理器 & 对外接口函数
+# ============================================================
+
+class _RAGManager:
+    """
+    RAG知识库单例管理器。
+    
+    保证向量库和嵌入模型在整个进程中只加载一次，
+    后续所有节点调用均复用同一实例，避免重复IO和模型加载开销。
+    """
+    _instance: Optional["_RAGManager"] = None
+    _vector_store = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def get_vector_store(self, rebuild: bool = False):
+        """
+        获取向量库实例（懒加载，首次调用时才初始化）。
+        
+        参数:
+            rebuild: 是否强制重建向量库
+        返回:
+            FAISS向量库实例，若知识库为空则返回None
+        """
+        if self._vector_store is None or rebuild:
+            self._vector_store = build_or_load_vector_store(rebuild=rebuild)
+        return self._vector_store
+
+    def reset(self):
+        """重置单例，强制下次调用时重新加载（用于测试或热更新知识库）。"""
+        self._vector_store = None
+
+
+# 模块级单例实例
+_rag_manager = _RAGManager()
+
+
+def query_knowledge_base(
+    query: str,
+    k: int = 4,
+    rebuild: bool = False
+) -> List[Dict]:
+    """
+    【对外接口】在知识库中检索与query最相关的文档片段。
+    
+    这是供其他节点直接调用的核心接口，内部自动管理向量库的加载与缓存。
+    
+    使用示例（在任意节点中）:
+        from tools import query_knowledge_base
+        
+        results = query_knowledge_base("数据中心液冷技术要求")
+        for r in results:
+            print(r['content'])   # 相关文本片段
+            print(r['source'])    # 来源文件名
+            print(r['page'])      # 页码
+    
+    参数:
+        query:   检索问题/关键词，支持中英文自然语言
+        k:       返回最相关的片段数量，默认4条
+        rebuild: 是否强制重建向量库（通常不需要），默认False
+        
+    返回:
+        List[Dict]，每个dict包含:
+            - content (str):  文档片段的文本内容
+            - source  (str):  来源文件名（不含路径）
+            - page    (int):  页码，Word文档则为-1
+        若知识库为空或检索失败，返回空列表 []
+    """
+    vector_store = _rag_manager.get_vector_store(rebuild=rebuild)
+    if vector_store is None:
+        print("⚠️ [RAG] 知识库为空，无法检索，返回空结果")
+        return []
+
+    try:
+        retriever = vector_store.as_retriever(search_kwargs={"k": k})
+        docs = retriever.invoke(query)
+        results = [
+            {
+                "content": doc.page_content,
+                "source":  os.path.basename(doc.metadata.get("source", "未知来源")),
+                "page":    doc.metadata.get("page", -1),
+            }
+            for doc in docs
+        ]
+        print(f"🔍 [RAG] 查询 '{query[:30]}...' 命中 {len(results)} 条片段")
+        return results
+    except Exception as e:
+        print(f"❌ [RAG] 检索失败: {e}")
+        return []
+
+
+def query_knowledge_base_as_text(
+    query: str,
+    k: int = 4,
+    rebuild: bool = False
+) -> str:
+    """
+    【对外接口】检索知识库并将结果拼接为纯文本，方便直接嵌入LLM Prompt。
+    
+    使用示例（在节点中构造Prompt时）:
+        from tools import query_knowledge_base_as_text
+        
+        context = query_knowledge_base_as_text("PUE标准要求")
+        prompt = f"根据以下知识库内容回答问题：\\n{context}\\n问题：..."
+    
+    参数:
+        query:   检索问题/关键词
+        k:       返回片段数量，默认4条
+        rebuild: 是否强制重建向量库，默认False
+        
+    返回:
+        str，格式化后的多段文本；若无结果则返回空字符串
+    """
+    results = query_knowledge_base(query, k=k, rebuild=rebuild)
+    if not results:
+        return ""
+
+    parts = []
+    for i, r in enumerate(results, start=1):
+        parts.append(
+            f"[片段{i}] 来源: {r['source']}"
+            + (f" 第{r['page']}页" if r['page'] != -1 else "")
+            + f"\n{r['content']}"
+        )
+    return "\n\n".join(parts)
+
+
+def rebuild_knowledge_base() -> bool:
+    """
+    【对外接口】强制重建知识库（当knowledge_base目录有新文件时调用）。
+    
+    使用示例:
+        from tools import rebuild_knowledge_base
+        rebuild_knowledge_base()
+    
+    返回:
+        bool，重建成功返回True，失败返回False
+    """
+    print("🔧 [RAG] 开始重建知识库...")
+    try:
+        _rag_manager.reset()
+        vector_store = _rag_manager.get_vector_store(rebuild=True)
+        success = vector_store is not None
+        if success:
+            print("✅ [RAG] 知识库重建成功")
+        else:
+            print("⚠️ [RAG] 知识库重建完成，但文档为空")
+        return success
+    except Exception as e:
+        print(f"❌ [RAG] 知识库重建失败: {e}")
+        return False
+
 
 import argparse
 
