@@ -108,9 +108,9 @@ def create_energy_specialist_agent():
     **【2. 来自 API 的实时电网数据】**
     {api_data}
 
-    **请输出一份深度的 Markdown 方案（≤600字）：**
+    **请输出一份深度的 Markdown 方案（≤600 字）：**
     内容需包含：
-    1. **现状挑战分析**：结合{location}的年均温({temp}℃)对 PUE {pue_target} 目标的达成可能性进行评估。
+    1. **现状挑战分析**：结合{location}的年均温 ({temp}℃) 对 PUE {pue_target} 目标的达成可能性进行评估。
     2. **电力消纳策略**：针对 {green_target}% 的绿电目标，结合当前电网碳强度给出初步电力配比方案。
     3. **经济性建议**：利用最大峰谷价差 ({price_diff} 元/kWh) 给出具体的储能套利与运行建议。
     """
@@ -122,28 +122,8 @@ def create_energy_specialist_agent():
 
 
 # ============================================================
-# 4. 字段转换工具函数
+# 4. 工具函数
 # ============================================================
-
-def _convert_electricity_price_to_chinese(price_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    将 Agent 1 输出的英文电价字段转换为中文字段名
-    
-    Agent 1 输出格式 (英文):
-        peak_price, high_price, flat_price, low_price, deep_low_price, max_price_diff
-        
-    同事代码期望格式 (中文):
-        尖峰电价, 高峰电价, 平段电价, 低谷电价, 深谷电价, 最大峰谷价差
-    """
-    return {
-        "尖峰电价": price_data.get("peak_price", 0.5),
-        "高峰电价": price_data.get("high_price", 0.4),
-        "平段电价": price_data.get("flat_price", 0.3),
-        "低谷电价": price_data.get("low_price", 0.25),
-        "深谷电价": price_data.get("deep_low_price", 0.2),
-        "最大峰谷价差": price_data.get("max_price_diff", 0.15)
-    }
-
 
 def _build_project_context(
     user_req: Dict[str, Any],
@@ -216,15 +196,15 @@ def energy_planner_node(state: dict) -> dict:
     annual_temp = env_data.get("annual_temperature", 10)
     
     print(f"📊 从 Agent 1 获取的输入:")
-    print(f"  - 位置: {location}")
-    print(f"  - PUE目标: {pue_target}")
-    print(f"  - 绿电目标: {green_target}%")
-    print(f"  - 年均温度: {annual_temp}°C")
+    print(f"  - 位置：{location}")
+    print(f"  - PUE 目标：{pue_target}")
+    print(f"  - 绿电目标：{green_target}%")
+    print(f"  - 年均温度：{annual_temp}°C")
     
-    # ===== 2. 字段格式转换（英文 → 中文）=====
-    price_data_cn = _convert_electricity_price_to_chinese(electricity_price)
+    # ===== 2. 直接使用电价数据（已是中文格式）=====
+    price_data_cn = state.get("electricity_price", {})
     price_diff = price_data_cn.get("最大峰谷价差", 0)
-    print(f"  - 峰谷价差: {price_diff} 元/kWh")
+    print(f"  - 峰谷价差：{price_diff} 元/kWh")
     
     # ===== 3. 构建项目背景上下文 =====
     project_context = _build_project_context(user_req, env_data, price_data_cn)
@@ -300,9 +280,6 @@ def energy_planner_node(state: dict) -> dict:
         "energy_plan": energy_plan
     }
 
-
-# 保持向后兼容的别名
-agent2_node = energy_planner_node
 
 
 # ============================================================

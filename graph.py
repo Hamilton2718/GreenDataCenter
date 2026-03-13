@@ -11,17 +11,9 @@ GreenDataCenter - LangGraph 多Agent工作流定义
 from typing import TypedDict, Optional, List, Dict, Any, Annotated
 from dataclasses import dataclass, field
 import operator
+from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import MemorySaver
 
-# LangGraph核心组件（延迟导入，避免循环依赖）
-try:
-    from langgraph.graph import StateGraph, END
-    from langgraph.checkpoint.memory import MemorySaver
-    LANGGRAPH_AVAILABLE = True
-except ImportError:
-    LANGGRAPH_AVAILABLE = False
-    StateGraph = None
-    END = None
-    MemorySaver = None
 
 # ============================================================
 # 1. 统一状态类型定义 (所有Agent共享的状态)
@@ -100,15 +92,14 @@ class CoolingPlan(TypedDict, total=False):
     equipment_list: List[Dict[str, Any]]   # 设备清单
 
 
-class SimulationResult(TypedDict, total=False):
-    """仿真结果数据结构"""
-    hourly_power_balance: List[Dict]       # 每小时电力平衡
-    annual_green_consumption: float        # 年绿电消纳量（kWh）
-    actual_green_ratio: float              # 实际绿电占比（%）
-    actual_pue: float                      # 实际PUE
-    carbon_reduction: float                # 碳减排量（吨CO₂/年）
-    validation_passed: bool                # 验证是否通过
-    validation_issues: List[str]           # 验证问题列表
+class ReviewResult(TypedDict, total=False):
+    """审核评估结果数据结构"""
+    evaluation_text: str                   # LLM 生成的完整评估报告
+    passed: bool                           # 是否通过审核
+    score: float                           # 综合评分（1-5 分）
+    evaluator: str                         # 使用的评估模型（如 DeepSeek）
+    issues: List[str]                      # 问题列表
+    suggestions: List[str]                 # 改进建议
 
 
 class FinancialAnalysis(TypedDict, total=False):
@@ -123,20 +114,20 @@ class FinancialAnalysis(TypedDict, total=False):
 
 class GreenDataCenterState(TypedDict, total=False):
     """
-    LangGraph统一状态定义
+    LangGraph 统一状态定义
     
-    这是整个系统的核心状态类型，所有Agent节点都使用这个状态进行数据交换。
+    这是整个系统的核心状态类型，所有 Agent 节点都使用这个状态进行数据交换。
     状态在节点之间传递，每个节点可以读取和更新状态中的字段。
     
     字段说明:
-        - user_requirements: 用户输入的需求（Agent 1填充）
-        - environmental_data: 环境数据（Agent 1填充）
-        - electricity_price: 电价数据（Agent 1填充）
-        - load_profile: 负荷特性（Agent 1或Agent 2填充）
-        - energy_plan: 能源规划方案（Agent 2填充）
-        - cooling_plan: 制冷方案（Agent 3填充）
-        - simulation_result: 仿真结果（Agent 4填充）
-        - financial_analysis: 财务分析（Agent 5填充）
+        - user_requirements: 用户输入的需求（Agent 1 填充）
+        - environmental_data: 环境数据（Agent 1 填充）
+        - electricity_price: 电价数据（Agent 1 填充）
+        - load_profile: 负荷特性（Agent 1 或 Agent 2 填充）
+        - energy_plan: 能源规划方案（Agent 2 填充）
+        - cooling_plan: 制冷方案（Agent 3 填充）
+        - review_result: 审核评估结果（Agent 4 填充）
+        - financial_analysis: 财务分析（Agent 5 填充）
         - iteration_count: 迭代次数（用于控制循环）
         - error_message: 错误信息
         - final_report: 最终报告
@@ -153,8 +144,9 @@ class GreenDataCenterState(TypedDict, total=False):
     # ===== Agent 3: 暖通与制冷架构专家 =====
     cooling_plan: Optional[CoolingPlan]
     
-    # ===== Agent 4: 虚拟运行仿真专家 =====
-    simulation_result: Optional[SimulationResult]
+    # ===== Agent 4: 方案审核与评估专家 =====
+    review_result: Optional[ReviewResult]
+    feedback: Optional[Dict[str, Any]]     # 反馈意见（用于重新优化）
     
     # ===== Agent 5: 综合评价与投资决策专家 =====
     financial_analysis: Optional[FinancialAnalysis]
@@ -163,7 +155,7 @@ class GreenDataCenterState(TypedDict, total=False):
     iteration_count: int                   # 迭代计数器
     max_iterations: int                    # 最大迭代次数
     error_message: Optional[str]           # 错误信息
-    final_report: Optional[str]            # 最终报告（Markdown格式）
+    final_report: Optional[str]            # 最终报告（Markdown 格式）
 
 
 # ============================================================
@@ -215,7 +207,6 @@ def create_initial_state(
         "load_profile": None,
         "energy_plan": None,
         "cooling_plan": None,
-        "simulation_result": None,
         "financial_analysis": None,
         "iteration_count": 0,
         "max_iterations": 3,
@@ -230,36 +221,38 @@ def create_initial_state(
 
 def should_continue_or_retry(state: GreenDataCenterState) -> str:
     """
-    判断是否继续到下一个Agent或返回到Agent 1重新调整
+    根据审核结果决定流程走向
     
-    在Agent 4（仿真专家）执行后调用，根据验证结果决定流程走向。
-    
+    参数:
+        state: 当前系统状态
+        
     返回:
-        - "continue": 验证通过，继续到Agent 5
-        - "retry": 验证失败且未超过最大迭代次数，返回到Agent 1
-        - "end": 验证失败且超过最大迭代次数，结束流程
+        "continue": 审核通过，继续到财务分析
+        "retry": 审核不通过且未超过最大迭代次数，返回重新优化
+        "end": 审核不通过且超过最大迭代次数，结束流程
     """
-    simulation_result = state.get("simulation_result")
+    review_result = state.get("review_result")
     iteration_count = state.get("iteration_count", 0)
     max_iterations = state.get("max_iterations", 3)
     
-    # 如果没有仿真结果，直接继续
-    if simulation_result is None:
+    # 如果没有审核结果，直接继续
+    if review_result is None:
+        print("⚠️ 无审核结果，默认继续")
         return "continue"
     
-    # 检查验证是否通过
-    validation_passed = simulation_result.get("validation_passed", True)
+    # 检查是否通过审核
+    passed = review_result.get("passed", True)
     
-    if validation_passed:
-        print("✅ 仿真验证通过，继续到财务分析")
+    if passed:
+        print("✅ 方案审核通过，继续到财务分析")
         return "continue"
     
-    # 验证失败，检查是否超过最大迭代次数
+    # 审核不通过，检查是否超过最大迭代次数
     if iteration_count >= max_iterations:
-        print(f"⚠️ 已达到最大迭代次数({max_iterations})，结束流程")
+        print(f"⚠️ 已达到最大迭代次数 ({max_iterations})，结束流程")
         return "end"
     
-    print(f"🔄 仿真验证失败，返回重新调整参数（第{iteration_count + 1}次迭代）")
+    print(f"🔄 方案审核不通过，返回重新优化（第{iteration_count}次迭代）")
     return "retry"
 
 
@@ -284,63 +277,64 @@ def check_error(state: GreenDataCenterState) -> str:
 # ============================================================
 
 def build_datacenter_workflow(
-    agent1_node,
-    agent2_node,
-    agent3_node,
-    agent4_node,
-    agent5_node
+    requirement_analysis_node,
+    energy_planner_node,
+    cooling_specialist_node,
+    review_node, 
+    financial_consultant_node
 ) -> StateGraph:
     """
-    构建数据中心绿电消纳规划工作流
+    构建数据中心规划工作流图
     
-    参数:
-        agent1_node: 需求与约束解析专家节点函数
-        agent2_node: 能源与绿电规划专家节点函数
-        agent3_node: 暖通与制冷架构专家节点函数
-        agent4_node: 虚拟运行仿真专家节点函数
-        agent5_node: 综合评价与投资决策专家节点函数
+    工作流说明:
+        1. Agent 1 (需求解析) → 
+        2. Agent 2 (能源规划) → 
+        3. Agent 3 (制冷设计) → 
+        4. Agent 4 (审核评估) → [条件分支]
+           - 通过 → Agent 5 (财务分析) → END
+           - 不通过 → 返回 Agent 1/2/3 重新优化（带反馈意见）
     
-    返回:
-        编译后的StateGraph
-    
-    工作流结构:
-        agent1 -> agent2 -> agent3 -> agent4 -> [条件判断]
-                                        |
-                    ┌-------------------┘
-                    | (验证失败)
-                    v
-        agent1 <- agent4
-                    |
-                    | (验证通过)
-                    v
-                agent5 -> END
+    流程图:
+        START → requirement_analysis
+                     ↓
+                energy_planning
+                     ↓
+               cooling_design
+                     ↓
+                  review_node
+                 /          \
+         (通过) /            \ (不通过，需要重试)
+             ↓              ↓
+        financial_analysis  ↘ (反馈给前 3 个节点)
+             ↓              ↗
+            END ←──────────┘
     """
     # 创建工作流图
     workflow = StateGraph(GreenDataCenterState)
     
     # 添加节点
-    workflow.add_node("requirement_analysis", agent1_node)
-    workflow.add_node("energy_planning", agent2_node)
-    workflow.add_node("cooling_design", agent3_node)
-    workflow.add_node("simulation", agent4_node)
-    workflow.add_node("financial_analysis", agent5_node)
+    workflow.add_node("requirement_analysis", requirement_analysis_node)
+    workflow.add_node("energy_planning", energy_planner_node)
+    workflow.add_node("cooling_design", cooling_specialist_node)
+    workflow.add_node("review", review_node)  # 新增审核节点
+    workflow.add_node("financial_analysis", financial_consultant_node)
     
     # 设置入口点
     workflow.set_entry_point("requirement_analysis")
     
-    # 添加边 - 顺序执行
+    # 添加边 - 顺序执行前 3 个节点
     workflow.add_edge("requirement_analysis", "energy_planning")
     workflow.add_edge("energy_planning", "cooling_design")
-    workflow.add_edge("cooling_design", "simulation")
+    workflow.add_edge("cooling_design", "review")  # 连接到审核节点
     
-    # 添加条件边 - 根据仿真结果决定流程走向
+    # 添加条件边 - 根据审核结果决定流程走向
     workflow.add_conditional_edges(
-        "simulation",
-        should_continue_or_retry,
+        "review",
+        should_continue_or_retry,  # 条件判断函数
         {
-            "continue": "financial_analysis",
-            "retry": "requirement_analysis",
-            "end": END
+            "continue": "financial_analysis",  # 通过 → 财务分析
+            "retry": "requirement_analysis",   # 不通过 → 返回重新优化
+            "end": END  # 达到最大迭代次数 → 结束
         }
     )
     
@@ -351,22 +345,22 @@ def build_datacenter_workflow(
 
 
 def create_datacenter_agent_system(
-    agent1_node,
-    agent2_node,
-    agent3_node,
-    agent4_node,
-    agent5_node,
+    requirement_analysis_node,
+    energy_planner_node,
+    cooling_specialist_node,
+    review_node, 
+    financial_consultant_node,
     checkpoint_dir: Optional[str] = None
 ) -> Any:
     """
-    创建完整的数据中心Agent系统
+    创建完整的数据中心 Agent 系统
     
     参数:
-        agent1_node: 需求与约束解析专家节点函数
-        agent2_node: 能源与绿电规划专家节点函数
-        agent3_node: 暖通与制冷架构专家节点函数
-        agent4_node: 虚拟运行仿真专家节点函数
-        agent5_node: 综合评价与投资决策专家节点函数
+        requirement_analysis_node: 需求与约束解析专家节点函数
+        energy_planner_node: 能源与绿电规划专家节点函数
+        cooling_specialist_node: 暖通与制冷架构专家节点函数
+        review_node: 方案审核与评估专家节点函数
+        financial_consultant_node: 综合评价与投资决策专家节点函数
         checkpoint_dir: 检查点保存目录（可选）
     
     返回:
@@ -374,11 +368,11 @@ def create_datacenter_agent_system(
     """
     # 构建工作流
     workflow = build_datacenter_workflow(
-        agent1_node=agent1_node,
-        agent2_node=agent2_node,
-        agent3_node=agent3_node,
-        agent4_node=agent4_node,
-        agent5_node=agent5_node
+        requirement_analysis_node=requirement_analysis_node,
+        energy_planner_node=energy_planner_node,
+        cooling_specialist_node=cooling_specialist_node,
+        review_node=review_node,
+        financial_consultant_node=financial_consultant_node
     )
     
     # 配置检查点（用于持久化状态）
@@ -431,12 +425,6 @@ def print_state_summary(state: GreenDataCenterState) -> None:
         print(f"\n❄️ 制冷技术: {cooling_plan.get('cooling_technology', 'N/A')}")
         print(f"📊 预计PUE: {cooling_plan.get('estimated_pue', 'N/A')}")
     
-    # 仿真结果
-    sim_result = state.get("simulation_result")
-    if sim_result:
-        print(f"\n✅ 验证结果: {'通过' if sim_result.get('validation_passed') else '未通过'}")
-        print(f"🌱 实际绿电占比: {sim_result.get('actual_green_ratio', 'N/A')}%")
-    
     # 财务分析
     financial = state.get("financial_analysis")
     if financial:
@@ -448,35 +436,33 @@ def print_state_summary(state: GreenDataCenterState) -> None:
 
 def generate_final_report(state: GreenDataCenterState) -> str:
     """
-    生成最终的规划设计建议书（Markdown格式）
+    生成最终的规划设计建议书（在 graph.py 中统一生成）
     
     参数:
         state: 最终状态
-    
+        
     返回:
-        Markdown格式的报告字符串
+        Markdown 格式的报告字符串
     """
     user_req = state.get("user_requirements", {})
     env_data = state.get("environmental_data", {})
     energy_plan = state.get("energy_plan", {})
     cooling_plan = state.get("cooling_plan", {})
-    sim_result = state.get("simulation_result", {})
     financial = state.get("financial_analysis", {})
     
     report = f"""# 数据中心绿电消纳规划设计建议书
 
-## 一、项目概述
+## 一、项目概况
 
-| 项目参数 | 数值 |
-|---------|------|
+| 项目 | 数值 |
+|------|------|
 | 地理位置 | {user_req.get('location', 'N/A')} |
 | 业务类型 | {user_req.get('business_type', 'N/A')} |
-| 计划面积 | {user_req.get('planned_area', 'N/A')} 平方米 |
 | 计划负荷 | {user_req.get('planned_load', 'N/A')} kW |
 | 算力密度 | {user_req.get('computing_power_density', 'N/A')} kW/机柜 |
 | 优先级 | {user_req.get('priority', 'N/A')} |
 | 绿电目标 | {user_req.get('green_energy_target', 'N/A')}% |
-| PUE目标 | {user_req.get('pue_target', 'N/A')} |
+| PUE 目标 | {user_req.get('pue_target', 'N/A')} |
 
 ## 二、环境条件分析
 
@@ -501,236 +487,240 @@ def generate_final_report(state: GreenDataCenterState) -> str:
 | 技术参数 | 数值 |
 |---------|------|
 | 制冷技术 | {cooling_plan.get('cooling_technology', 'N/A')} |
-| 预计年均PUE | {cooling_plan.get('estimated_pue', 'N/A')} |
-| 自然冷却小时数 | {cooling_plan.get('free_cooling_hours', 'N/A')} 小时/年 |
+| 预计年均 PUE | {cooling_plan.get('estimated_pue', 'N/A')} |
 
-## 五、运行效果预测
-
-| 性能指标 | 预测值 |
-|---------|--------|
-| 实际绿电占比 | {sim_result.get('actual_green_ratio', 'N/A')}% |
-| 实际PUE | {sim_result.get('actual_pue', 'N/A')} |
-| 年碳减排量 | {sim_result.get('carbon_reduction', 'N/A')} 吨CO₂ |
-
-## 六、投资分析
+## 五、财务分析
 
 | 财务指标 | 数值 |
 |---------|------|
 | 投资回收期 | {financial.get('payback_period', 'N/A')} 年 |
-| 内部收益率(IRR) | {financial.get('irr', 'N/A')}% |
-| 净现值(NPV) | {financial.get('npv', 'N/A')} 万元 |
-| 平准化电力成本(LCOE) | {financial.get('lcoe', 'N/A')} 元/kWh |
+| 内部收益率 (IRR) | {financial.get('irr', 'N/A')}% |
+| 净现值 (NPV) | {financial.get('npv', 'N/A')} 万元 |
+| 平准化电力成本 (LCOE) | {financial.get('lcoe', 'N/A')} 元/kWh |
 
 ---
-*本报告由GreenDataCenter智能规划系统自动生成*
+*本报告由 GreenDataCenter 智能规划系统自动生成*
 """
     
     return report
 
 
-# ============================================================
-# 6. 导出接口
-# ============================================================
-
-__all__ = [
-    # 状态类型
-    "GreenDataCenterState",
-    "DataCenterRequirements",
-    "EnvironmentalData",
-    "ElectricityPriceData",
-    "LoadProfile",
-    "EnergyPlan",
-    "CoolingPlan",
-    "SimulationResult",
-    "FinancialAnalysis",
+# 6. 主程序入口（完整工作流测试）
+def save_workflow_graph(app, output_path: str = "output/workflow_graph.png") -> bool:
+    """
+    保存 LangGraph 工作流图为 PNG 图片
     
-    # 函数
-    "create_initial_state",
-    "build_datacenter_workflow",
-    "create_datacenter_agent_system",
-    "should_continue_or_retry",
-    "check_error",
-    "print_state_summary",
-    "generate_final_report",
-]
+    参数:
+        app: 编译后的 LangGraph 应用
+        output_path: 输出图片路径
+    
+    返回:
+        bool, 成功返回 True
+    """
+    import os
+    
+    # 确保输出目录存在
+    output_dir = os.path.dirname(output_path)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    try:
+        # 方法1: 使用 draw_mermaid_png (LangGraph 0.1+)
+        graph = app.get_graph()
+        png_data = graph.draw_mermaid_png()
+        with open(output_path, "wb") as f:
+            f.write(png_data)
+        return True
+    except Exception as e1:
+        try:
+            # 方法2: 使用 draw_png (需要 graphviz)
+            graph = app.get_graph()
+            graph.draw_png(output_path)
+            return True
+        except Exception as e2:
+            print(f"⚠️ 无法生成流程图: {e1} / {e2}")
+            return False
 
 
-# ============================================================
-# 7. 主程序入口（完整工作流测试）
-# ============================================================
+def save_report_as_markdown(state: dict, output_path: str = "output/final_report.md") -> bool:
+    """
+    将最终报告保存为 Markdown 文件（在 graph.py 中统一生成）
+    
+    参数:
+        state: 最终状态
+        output_path: 输出文件路径
+    
+    返回:
+        bool, 成功返回 True
+    """
+    import os
+    from datetime import datetime
+    
+    # 确保输出目录存在
+    output_dir = os.path.dirname(output_path)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    # 获取各部分数据（容错处理）
+    user_reqs = state.get("user_requirements", {}) or {}
+    env_data = state.get("environmental_data", {}) or {}
+    energy_plan = state.get("energy_plan", {}) or {}
+    cooling_plan = state.get("cooling_plan", {}) or {}
+    review_result = state.get("review_result", {}) or {}
+    financial = state.get("financial_analysis", {}) or {}
+    
+    # 获取 Agent 2 的 LLM 报告
+    llm_report = energy_plan.get("llm_report", "") if energy_plan else ""
+    
+    # 构建完整报告
+    full_report = f"""# GreenDataCenter 规划设计报告
+
+> 生成时间：{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+---
+
+## 一、项目基本信息
+
+| 项目 | 数值 |
+|------|------|
+| 地理位置 | {user_reqs.get('location', 'N/A') if user_reqs else 'N/A'} |
+| 业务类型 | {user_reqs.get('business_type', 'N/A') if user_reqs else 'N/A'} |
+| 计划负荷 | {user_reqs.get('planned_load', 'N/A') if user_reqs else 'N/A'} kW |
+| 算力密度 | {user_reqs.get('computing_power_density', 'N/A') if user_reqs else 'N/A'} kW/机柜 |
+| PUE 目标 | {user_reqs.get('pue_target', 'N/A') if user_reqs else 'N/A'} |
+| 绿电目标 | {user_reqs.get('green_energy_target', 'N/A') if user_reqs else 'N/A'}% |
+
+---
+
+## 二、能源规划方案 (Agent 2 - XSimple)
+
+{llm_report if llm_report else "未生成详细能源规划报告"}
+
+---
+
+## 三、制冷方案 (Agent 3)
+
+| 指标 | 数值 |
+|------|------|
+| 制冷技术 | {cooling_plan.get('cooling_technology', 'N/A') if cooling_plan else 'N/A'} |
+| 预计 PUE | {cooling_plan.get('estimated_pue', 'N/A') if cooling_plan else 'N/A'} |
+| 预计 WUE | {cooling_plan.get('predicted_wue', 'N/A') if cooling_plan else 'N/A'} |
+
+---
+
+## 四、审核评估结果 (Agent 4)
+
+**审核结论**: {"✅ 通过" if review_result and review_result.get('passed') else "❌ 不通过"}  
+**综合评分**: {review_result.get('score', 'N/A') if review_result else 'N/A'}/5  
+**评估模型**: {review_result.get('evaluator', 'N/A') if review_result else 'N/A'}
+
+---
+
+## 五、财务分析 (Agent 5)
+
+"""
+    
+    # 如果财务分析存在，添加详细内容
+    if financial:
+        full_report += f"""### 投资估算
+
+| 项目 | 金额（万元） |
+|------|-------------|
+| 总投资 (CAPEX) | {financial.get('capex_total', 'N/A')} |
+| 年节省费用 | {financial.get('annual_saving', 'N/A')} |
+| 投资回收期 | {financial.get('payback_years', 'N/A')} 年 |
+
+### 成本明细
+
+- 电网购电成本：{financial.get('grid_cost', 'N/A')} 万元/年
+- PPA 购电成本：{financial.get('ppa_cost', 'N/A')} 万元/年
+- 光伏自用节省：-{financial.get('pv_saving', 'N/A')} 万元/年
+- 碳减排收益：-{financial.get('carbon_benefit', 'N/A')} 万元/年
+- **净总用电成本**: **{financial.get('total_cost', 'N/A')}** 万元/年
+
+### 碳减排贡献
+
+- **年碳减排量**: {financial.get('emission_reduction', 'N/A')} 吨 CO₂/年
+- **全生命周期减排**: {financial.get('lifetime_reduction', 'N/A')} 吨 CO₂
+
+---
+
+## 六、综合评价
+
+根据审核结果，该数据中心规划方案：
+- {"✅ 绿电消纳达标" if review_result and review_result.get('passed') else "⚠️ 需要进一步优化"}
+- ✅ 制冷技术选择合理
+- ✅ 财务指标良好，投资回收期 {financial.get('payback_years', 'N/A')} 年
+
+"""
+    else:
+        full_report += """*注：由于方案未通过审核，财务分析未执行。*
+
+---
+
+## 六、综合评价
+
+该方案在审核阶段未通过，需要进一步优化能源配置和制冷方案后重新提交审核。
+
+"""
+    
+    full_report += """---
+
+*本报告由 GreenDataCenter 智能规划系统自动生成*
+"""
+    
+    try:
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(full_report)
+        return True
+    except Exception as e:
+        print(f"⚠️ 无法保存报告：{e}")
+        return False
+
 
 if __name__ == "__main__":
-    print("="*70)
-    print("  GreenDataCenter LangGraph 多Agent工作流 - 完整测试")
-    print("="*70)
+    import os
     
     # ===== 1. 导入所有节点 =====
-    print("\n📦 正在导入Agent节点...")
-    try:
-        from nodes.requirement_analysis_node import requirement_analysis_node
-        print("  ✅ Agent 1: 需求与约束解析专家")
-    except ImportError as e:
-        print(f"  ❌ Agent 1 导入失败: {e}")
-        requirement_analysis_node = None
-    
-    try:
-        from nodes.energy_planner_node import energy_planner_node
-        print("  ✅ Agent 2: 能源与绿电规划专家 (XSimple)")
-    except ImportError as e:
-        print(f"  ❌ Agent 2 导入失败: {e}")
-        energy_planner_node = None
-    
-    try:
-        from nodes.cooling_specialist_node import cooling_specialist_node
-        print("  ✅ Agent 3: 暖通与制冷架构专家")
-    except ImportError as e:
-        print(f"  ❌ Agent 3 导入失败: {e}")
-        cooling_specialist_node = None
-    
-    try:
-        from nodes.simulator_node import simulator_node
-        print("  ✅ Agent 4: 虚拟运行仿真专家")
-    except ImportError as e:
-        print(f"  ❌ Agent 4 导入失败: {e}")
-        simulator_node = None
-    
-    try:
-        from nodes.financial_consultant_node import financial_consultant_node
-        print("  ✅ Agent 5: 综合评价与投资决策专家")
-    except ImportError as e:
-        print(f"  ❌ Agent 5 导入失败: {e}")
-        financial_consultant_node = None
-    
-    # 检查所有节点是否可用
-    all_nodes_available = all([
-        requirement_analysis_node,
-        energy_planner_node,
-        cooling_specialist_node,
-        simulator_node,
-        financial_consultant_node
-    ])
-    
-    if not all_nodes_available:
-        print("\n❌ 部分Agent节点不可用，无法运行完整工作流")
-        print("请检查 nodes/ 目录下的文件是否完整")
-        exit(1)
+    from nodes.requirement_analysis_node import requirement_analysis_node
+    from nodes.energy_planner_node import energy_planner_node
+    from nodes.cooling_specialist_node import cooling_specialist_node
+    from nodes.review_node import review_node 
+    from nodes.financial_consultant_node import financial_consultant_node
     
     # ===== 2. 创建初始状态 =====
-    print("\n" + "="*70)
-    print("📋 创建初始状态 - 测试场景: 乌兰察布环保型数据中心")
-    print("="*70)
-    
     initial_state = create_initial_state(
         location="乌兰察布",
         business_type="大模型训练",
-        planned_area=10000,           # 10000平方米
-        planned_load=5000,            # 5000kW (5MW)
-        computing_power_density=30,   # 30kW/机柜 (高密度，需要液冷)
+        planned_area=10000,
+        planned_load=5000,
+        computing_power_density=30,
         priority="环保型",
-        green_energy_target=90,       # 90%绿电目标
-        pue_target=1.2,               # PUE目标1.2
-        budget_constraint=10000       # 1亿元预算
+        green_energy_target=90,
+        pue_target=1.2,
+        budget_constraint=10000
     )
     
-    print("\n📊 初始状态参数:")
-    print(f"  - 位置: {initial_state['user_requirements']['location']}")
-    print(f"  - 业务类型: {initial_state['user_requirements']['business_type']}")
-    print(f"  - 计划负荷: {initial_state['user_requirements']['planned_load']} kW")
-    print(f"  - 算力密度: {initial_state['user_requirements']['computing_power_density']} kW/机柜")
-    print(f"  - 绿电目标: {initial_state['user_requirements']['green_energy_target']}%")
-    print(f"  - PUE目标: {initial_state['user_requirements']['pue_target']}")
+    # ===== 3. 构建工作流 =====
+    app = create_datacenter_agent_system(
+        requirement_analysis_node=requirement_analysis_node,
+        energy_planner_node=energy_planner_node,
+        cooling_specialist_node=cooling_specialist_node,
+        review_node=review_node,
+        financial_consultant_node=financial_consultant_node
+    )
     
-    # ===== 3. 检查 LangGraph 是否可用 =====
-    if not LANGGRAPH_AVAILABLE:
-        print("\n⚠️ LangGraph 未安装，将手动逐节点执行")
-        print("   如需使用完整工作流功能，请运行: pip install langgraph")
-        
-        # 手动逐节点执行
-        print("\n" + "="*70)
-        print("🚀 开始手动逐节点执行...")
-        print("="*70)
-        
-        state = initial_state.copy()
-        
-        # Agent 1
-        print("\n" + "-"*50)
-        state = requirement_analysis_node(state)
-        
-        # Agent 2
-        print("\n" + "-"*50)
-        state = energy_planner_node(state)
-        
-        # Agent 3
-        print("\n" + "-"*50)
-        state = cooling_specialist_node(state)
-        
-        # Agent 4
-        print("\n" + "-"*50)
-        state = simulator_node(state)
-        
-        # 检查是否需要重试
-        sim_result = state.get("simulation_result", {})
-        if not sim_result.get("validation_passed", True):
-            print("\n⚠️ 仿真验证未通过，在实际工作流中会返回重新调整")
-            print("   问题: ", sim_result.get("validation_issues", []))
-        
-        # Agent 5
-        print("\n" + "-"*50)
-        state = financial_consultant_node(state)
-        
-    else:
-        # ===== 4. 构建并执行 LangGraph 工作流 =====
-        print("\n" + "="*70)
-        print("🚀 构建 LangGraph 工作流...")
-        print("="*70)
-        
-        try:
-            app = create_datacenter_agent_system(
-                agent1_node=requirement_analysis_node,
-                agent2_node=energy_planner_node,
-                agent3_node=cooling_specialist_node,
-                agent4_node=simulator_node,
-                agent5_node=financial_consultant_node
-            )
-            print("✅ 工作流构建成功")
-            
-            print("\n" + "="*70)
-            print("▶️  执行工作流...")
-            print("="*70)
-            
-            # 执行工作流
-            state = app.invoke(initial_state)
-            
-        except Exception as e:
-            print(f"❌ 工作流执行失败: {e}")
-            import traceback
-            traceback.print_exc()
-            exit(1)
+    # ===== 4. 生成工作流流程图 =====
+    graph_path = "output/workflow_graph.png"
+    if save_workflow_graph(app, graph_path):
+        print(f"✅ 工作流流程图已保存：{os.path.abspath(graph_path)}")
     
-    # ===== 5. 打印最终结果 =====
-    print("\n" + "="*70)
-    print("📊 最终状态摘要")
-    print("="*70)
-    print_state_summary(state)
+    # ===== 5. 执行工作流 =====
+    state = app.invoke(initial_state)
     
-    # 打印 LLM 生成的能源方案报告
-    energy_plan = state.get("energy_plan", {})
-    llm_report = energy_plan.get("llm_report", "")
-    if llm_report:
-        print("\n" + "="*70)
-        print("📝 Agent 2 (XSimple) 生成的能源规划报告:")
-        print("="*70)
-        print(llm_report)
-    
-    # 打印最终报告
-    final_report = state.get("final_report", "")
-    if final_report:
-        print("\n" + "="*70)
-        print("📋 最终规划设计建议书:")
-        print("="*70)
-        print(final_report)
-    
-    print("\n" + "="*70)
-    print("✅ 工作流执行完成!")
-    print("="*70)
+    # ===== 6. 生成最终报告（在 graph.py 中统一生成）=====
+    report_path = "output/final_report.md"
+    if save_report_as_markdown(state, report_path):
+        print(f"✅ 最终报告已保存：{os.path.abspath(report_path)}")
 
+    print("✅ 工作流执行完成!")

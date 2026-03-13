@@ -31,9 +31,9 @@ try:
 except ImportError:
     has_langchain = False
 
-# 从 rag_builder 模块获取知识库检索器
+# 从 rag_builder 模块获取知识库检索器（使用标准接口）
 try:
-    from tools import build_or_load_vector_store
+    from tools import query_knowledge_base, query_knowledge_base_as_text
     has_rag = True
 except ImportError:
     has_rag = False
@@ -108,33 +108,10 @@ class DataCenterAgent1:
     
     def __init__(self):
         """
-        初始化Agent 1
+        初始化 Agent 1（不再维护 RAG，直接使用标准接口）
         """
-        self.vector_store = None
-        self.retriever = None
-        self.init_rag()
-    
-    def init_rag(self):
-        """
-        初始化RAG知识库
-        """
-        # 跳过RAG初始化以加快测试速度
-        print("⚠️ 跳过知识库初始化，使用默认数据")
-        return
-        
-        if has_rag:
-            try:
-                self.vector_store = build_or_load_vector_store()
-                if self.vector_store:
-                    self.retriever = self.vector_store.as_retriever()
-                    print("✅ 知识库初始化成功")
-                else:
-                    print("⚠️ 知识库为空，将使用默认数据")
-            except Exception as e:
-                print(f"❌ 初始化知识库失败: {e}")
-        else:
-            print("⚠️ 未找到rag_builder模块，将使用默认数据")
-    
+        pass
+
     def get_coordinates(self, city_name):
         """
         使用geopy获取城市经纬度
@@ -476,7 +453,7 @@ class DataCenterAgent1:
     
     def process_user_input(self, user_input):
         """
-        处理用户输入，生成标准化数据包
+        处理用户输入，生成标准化数据包（增强 RAG 知识检索）
         
         参数:
             user_input: dict，包含用户输入的所有参数
@@ -569,17 +546,7 @@ def requirement_analysis_node(state: dict) -> dict:
     
     # 获取用户需求
     user_requirements = state.get('user_requirements', {})
-    
-    # 打印用户需求
-    print(f"📍 地点: {user_requirements.get('location', '未知')}")
-    print(f"🏢 业务类型: {user_requirements.get('business_type', '通用')}")
-    print(f"📐 计划面积: {user_requirements.get('planned_area', 0)} 平方米")
-    print(f"⚡ 计划负荷: {user_requirements.get('planned_load', 0)} kW")
-    print(f"🔲 算力密度: {user_requirements.get('computing_power_density', user_requirements.get('Computing_power_density', 8))} kW/机柜")
-    print(f"🏷️ 优先级: {user_requirements.get('priority', '环保型')}")
-    print(f"🌿 绿电目标: {user_requirements.get('green_energy_target', 90)}%")
-    print(f"📊 PUE目标: {user_requirements.get('pue_target', 1.2)}")
-    
+
     # 创建Agent实例并处理
     agent1 = DataCenterAgent1()
     
@@ -601,26 +568,15 @@ def requirement_analysis_node(state: dict) -> dict:
     print(f"  - 年均日照: {environmental_data.get('annual_sunshine_hours', 'N/A')} 小时")
     print(f"  - 碳排因子: {environmental_data.get('carbon_emission_factor', 'N/A')} kgCO₂/kWh")
     
-    # 获取电价数据（原始格式）
-    electricity_price_raw = agent1.get_electricity_price(location)
-    
-    # 转换为标准格式
-    electricity_price = {
-        "peak_price": electricity_price_raw.get('尖峰电价', 0.5),
-        "high_price": electricity_price_raw.get('高峰电价', 0.4),
-        "flat_price": electricity_price_raw.get('平段电价', 0.3),
-        "low_price": electricity_price_raw.get('低谷电价', 0.25),
-        "deep_low_price": electricity_price_raw.get('深谷电价', 0.2),
-        "max_price_diff": electricity_price_raw.get('最大峰谷价差', 0.15)
-    }
-    
+    # 获取电价数据（保持中文格式，无需转换）
+    electricity_price = agent1.get_electricity_price(location)
     print(f"\n💰 电价数据:")
-    print(f"  - 尖峰电价: {electricity_price['peak_price']} 元/kWh")
-    print(f"  - 高峰电价: {electricity_price['high_price']} 元/kWh")
-    print(f"  - 平段电价: {electricity_price['flat_price']} 元/kWh")
-    print(f"  - 低谷电价: {electricity_price['low_price']} 元/kWh")
-    print(f"  - 深谷电价: {electricity_price['deep_low_price']} 元/kWh")
-    print(f"  - 最大峰谷价差: {electricity_price['max_price_diff']} 元/kWh")
+    print(f"  - 尖峰电价：{electricity_price['尖峰电价']} 元/kWh")
+    print(f"  - 高峰电价：{electricity_price['高峰电价']} 元/kWh")
+    print(f"  - 平段电价：{electricity_price['平段电价']} 元/kWh")
+    print(f"  - 低谷电价：{electricity_price['低谷电价']} 元/kWh")
+    print(f"  - 深谷电价：{electricity_price['深谷电价']} 元/kWh")
+    print(f"  - 最大峰谷价差：{electricity_price['最大峰谷价差']} 元/kWh")
     
     # 更新迭代计数器（如果是重试流程）
     iteration_count = state.get('iteration_count', 0)
@@ -640,9 +596,6 @@ def requirement_analysis_node(state: dict) -> dict:
         "iteration_count": iteration_count
     }
 
-
-# 保持向后兼容的别名
-agent1_node = requirement_analysis_node
 
 
 # --- 主程序入口 (用于独立测试) ---
@@ -687,7 +640,3 @@ if __name__ == '__main__':
     
     print("\n--- 生成的标准化数据包 ---")
     print(data_packet)
-     
-    # 模拟转交给Agent 2
-    print("\n--- 数据包已转交给 Agent 2 ---")
-    print("Agent 2 可以直接进入计算阶段")
