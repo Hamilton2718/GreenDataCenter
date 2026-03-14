@@ -63,7 +63,7 @@ def calculate_metrics_from_state(state: Dict[str, Any]) -> Dict[str, Any]:
     cooling_cost = cooling_plan.get("incremental_cost", 0)  # 万元
     
     # ===== 5. 【修改】不再使用仿真数据，改为基于经验公式估算 =====
-    # 之前从 simulator 获取的数据，现在基于能源方案和制冷方案估算
+    # 现在基于能源方案和制冷方案估算
     actual_pue = expected_pue  # 假设实际 PUE 等于设计 PUE
     
     # 估算年绿电消纳量（基于光伏装机容量和当地日照）

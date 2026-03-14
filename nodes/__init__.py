@@ -13,6 +13,7 @@ Available Nodes:
     - cooling_specialist_node: 暖通与制冷架构专家 (Agent 3)
     - review_node: 方案审核与评估专家 (Agent 4)  # 新增
     - financial_consultant_node: 综合评价与投资决策专家 (Agent 5)
+    - final_report_node: 最终报告生成节点 (Agent 6)
 
 Usage Example:
     from graph import create_datacenter_agent_system, create_initial_state
@@ -21,7 +22,8 @@ Usage Example:
         energy_planner_node,
         cooling_specialist_node,
         review_node,  # 新增
-        financial_consultant_node
+        financial_consultant_node,
+        final_report_node
     )
     
     # 创建 Agent 系统
@@ -30,7 +32,8 @@ Usage Example:
         energy_planner_node=energy_planner_node,
         cooling_specialist_node=cooling_specialist_node,
         review_node=review_node,  # 新增
-        financial_consultant_node=financial_consultant_node
+        financial_consultant_node=financial_consultant_node,
+        final_report_node=final_report_node
     )
     
     # 创建初始状态并执行
@@ -110,6 +113,15 @@ except ImportError:
         state["final_report"] = "# 最终报告\n（占位内容）"
         return state
 
+try:
+    from nodes.final_report_node import final_report_node
+except ImportError:
+    def final_report_node(state):
+        """占位函数：最终报告生成节点"""
+        print("⚠️ [Agent 6] 最终报告生成节点 - 占位实现")
+        state["final_report"] = state.get("final_report", "# 最终报告\n（占位内容）")
+        return state
+
 
 # ============================================================
 # 导出接口
@@ -133,4 +145,5 @@ __all__ = [
     'cooling_specialist_node',      # Agent 3
     'review_node',                  # Agent 4 (新增)
     'financial_consultant_node',    # Agent 5
+    'final_report_node',            # Agent 6
 ]

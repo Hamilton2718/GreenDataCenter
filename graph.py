@@ -227,7 +227,7 @@ def should_continue_or_retry(state: GreenDataCenterState) -> str:
         state: 当前系统状态
         
     返回:
-        "continue": 审核通过，继续到财务分析
+        "continue": 审核通过，继续到最终报告
         "retry": 审核不通过且未超过最大迭代次数，返回重新优化
         "end": 审核不通过且超过最大迭代次数，结束流程
     """
@@ -244,7 +244,7 @@ def should_continue_or_retry(state: GreenDataCenterState) -> str:
     passed = review_result.get("passed", True)
     
     if passed:
-        print("✅ 方案审核通过，继续到财务分析")
+        print("✅ 方案审核通过，继续到最终报告")
         return "continue"
     
     # 审核不通过，检查是否超过最大迭代次数
@@ -281,7 +281,8 @@ def build_datacenter_workflow(
     energy_planner_node,
     cooling_specialist_node,
     review_node, 
-    financial_consultant_node
+    financial_consultant_node,
+    final_report_node
 ) -> StateGraph:
     """
     构建数据中心规划工作流图
@@ -290,9 +291,11 @@ def build_datacenter_workflow(
         1. Agent 1 (需求解析) → 
         2. Agent 2 (能源规划) → 
         3. Agent 3 (制冷设计) → 
-        4. Agent 4 (审核评估) → [条件分支]
-           - 通过 → Agent 5 (财务分析) → END
-           - 不通过 → 返回 Agent 1/2/3 重新优化（带反馈意见）
+        4. Agent 4 (财务分析) →
+        5. Agent 5 (审核评估) → [条件分支]
+        - 通过 → Agent 6 (报告生成) → END
+        - 达到最大重试次数 → Agent 6 (报告生成) → END
+        - 不通过 → 返回 Agent 1/2/3 重新优化（带反馈意见）
     
     流程图:
         START → requirement_analysis
@@ -301,11 +304,13 @@ def build_datacenter_workflow(
                      ↓
                cooling_design
                      ↓
-                  review_node
+                financial_analysis
+                     ↓
+                   review_node
                  /          \
          (通过) /            \ (不通过，需要重试)
              ↓              ↓
-        financial_analysis  ↘ (反馈给前 3 个节点)
+             final_report    ↘ (反馈给前 3 个节点)
              ↓              ↗
             END ←──────────┘
     """
@@ -316,8 +321,9 @@ def build_datacenter_workflow(
     workflow.add_node("requirement_analysis", requirement_analysis_node)
     workflow.add_node("energy_planning", energy_planner_node)
     workflow.add_node("cooling_design", cooling_specialist_node)
-    workflow.add_node("review", review_node)  # 新增审核节点
     workflow.add_node("financial_analysis", financial_consultant_node)
+    workflow.add_node("review", review_node)  # 审核节点
+    workflow.add_node("final_report", final_report_node)
     
     # 设置入口点
     workflow.set_entry_point("requirement_analysis")
@@ -325,21 +331,21 @@ def build_datacenter_workflow(
     # 添加边 - 顺序执行前 3 个节点
     workflow.add_edge("requirement_analysis", "energy_planning")
     workflow.add_edge("energy_planning", "cooling_design")
-    workflow.add_edge("cooling_design", "review")  # 连接到审核节点
+    workflow.add_edge("cooling_design", "financial_analysis")
+    workflow.add_edge("financial_analysis", "review")
     
     # 添加条件边 - 根据审核结果决定流程走向
     workflow.add_conditional_edges(
         "review",
         should_continue_or_retry,  # 条件判断函数
         {
-            "continue": "financial_analysis",  # 通过 → 财务分析
+            "continue": "final_report",  # 通过 → 最终报告
             "retry": "requirement_analysis",   # 不通过 → 返回重新优化
-            "end": END  # 达到最大迭代次数 → 结束
+            "end": "final_report"  # 达到最大迭代次数 → 生成报告后结束
         }
     )
-    
-    # 财务分析后结束
-    workflow.add_edge("financial_analysis", END)
+
+    workflow.add_edge("final_report", END)
     
     return workflow
 
@@ -350,6 +356,7 @@ def create_datacenter_agent_system(
     cooling_specialist_node,
     review_node, 
     financial_consultant_node,
+    final_report_node,
     checkpoint_dir: Optional[str] = None
 ) -> Any:
     """
@@ -361,6 +368,7 @@ def create_datacenter_agent_system(
         cooling_specialist_node: 暖通与制冷架构专家节点函数
         review_node: 方案审核与评估专家节点函数
         financial_consultant_node: 综合评价与投资决策专家节点函数
+        final_report_node: 最终报告生成节点函数
         checkpoint_dir: 检查点保存目录（可选）
     
     返回:
@@ -372,7 +380,8 @@ def create_datacenter_agent_system(
         energy_planner_node=energy_planner_node,
         cooling_specialist_node=cooling_specialist_node,
         review_node=review_node,
-        financial_consultant_node=financial_consultant_node
+        financial_consultant_node=financial_consultant_node,
+        final_report_node=final_report_node
     )
     
     # 配置检查点（用于持久化状态）
@@ -434,77 +443,6 @@ def print_state_summary(state: GreenDataCenterState) -> None:
     print("\n" + "="*60)
 
 
-def generate_final_report(state: GreenDataCenterState) -> str:
-    """
-    生成最终的规划设计建议书（在 graph.py 中统一生成）
-    
-    参数:
-        state: 最终状态
-        
-    返回:
-        Markdown 格式的报告字符串
-    """
-    user_req = state.get("user_requirements", {})
-    env_data = state.get("environmental_data", {})
-    energy_plan = state.get("energy_plan", {})
-    cooling_plan = state.get("cooling_plan", {})
-    financial = state.get("financial_analysis", {})
-    
-    report = f"""# 数据中心绿电消纳规划设计建议书
-
-## 一、项目概况
-
-| 项目 | 数值 |
-|------|------|
-| 地理位置 | {user_req.get('location', 'N/A')} |
-| 业务类型 | {user_req.get('business_type', 'N/A')} |
-| 计划负荷 | {user_req.get('planned_load', 'N/A')} kW |
-| 算力密度 | {user_req.get('computing_power_density', 'N/A')} kW/机柜 |
-| 优先级 | {user_req.get('priority', 'N/A')} |
-| 绿电目标 | {user_req.get('green_energy_target', 'N/A')}% |
-| PUE 目标 | {user_req.get('pue_target', 'N/A')} |
-
-## 二、环境条件分析
-
-| 环境参数 | 数值 |
-|---------|------|
-| 年均温度 | {env_data.get('annual_temperature', 'N/A')}°C |
-| 年均风速 | {env_data.get('annual_wind_speed', 'N/A')} m/s |
-| 年日照时长 | {env_data.get('annual_sunshine_hours', 'N/A')} 小时 |
-| 碳排因子 | {env_data.get('carbon_emission_factor', 'N/A')} kgCO₂/kWh |
-
-## 三、能源配比方案
-
-| 能源类型 | 配置 |
-|---------|------|
-| 分布式光伏 | {energy_plan.get('pv_capacity', 'N/A')} kW |
-| 储能系统 | {energy_plan.get('storage_capacity', 'N/A')} kWh / {energy_plan.get('storage_power', 'N/A')} kW |
-| 绿电长协 | {energy_plan.get('ppa_ratio', 'N/A')}% |
-| 电网调峰 | {energy_plan.get('grid_ratio', 'N/A')}% |
-
-## 四、制冷技术方案
-
-| 技术参数 | 数值 |
-|---------|------|
-| 制冷技术 | {cooling_plan.get('cooling_technology', 'N/A')} |
-| 预计年均 PUE | {cooling_plan.get('estimated_pue', 'N/A')} |
-
-## 五、财务分析
-
-| 财务指标 | 数值 |
-|---------|------|
-| 投资回收期 | {financial.get('payback_period', 'N/A')} 年 |
-| 内部收益率 (IRR) | {financial.get('irr', 'N/A')}% |
-| 净现值 (NPV) | {financial.get('npv', 'N/A')} 万元 |
-| 平准化电力成本 (LCOE) | {financial.get('lcoe', 'N/A')} 元/kWh |
-
----
-*本报告由 GreenDataCenter 智能规划系统自动生成*
-"""
-    
-    return report
-
-
 # 6. 主程序入口（完整工作流测试）
 def save_workflow_graph(app, output_path: str = "output/workflow_graph.png") -> bool:
     """
@@ -561,6 +499,18 @@ def save_report_as_markdown(state: dict, output_path: str = "output/final_report
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)
     
+    # 优先使用最终报告节点生成的内容
+    final_report = state.get("final_report")
+    if final_report:
+        try:
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(final_report)
+            return True
+        except Exception as e:
+            print(f"⚠️ 无法保存报告：{e}")
+            return False
+
+    # 兼容逻辑：若未经过最终报告节点，仍可回退到本地拼装
     # 获取各部分数据（容错处理）
     user_reqs = state.get("user_requirements", {}) or {}
     env_data = state.get("environmental_data", {}) or {}
@@ -687,6 +637,7 @@ if __name__ == "__main__":
     from nodes.cooling_specialist_node import cooling_specialist_node
     from nodes.review_node import review_node 
     from nodes.financial_consultant_node import financial_consultant_node
+    from nodes.final_report_node import final_report_node
     
     # ===== 2. 创建初始状态 =====
     initial_state = create_initial_state(
@@ -707,7 +658,8 @@ if __name__ == "__main__":
         energy_planner_node=energy_planner_node,
         cooling_specialist_node=cooling_specialist_node,
         review_node=review_node,
-        financial_consultant_node=financial_consultant_node
+        financial_consultant_node=financial_consultant_node,
+        final_report_node=final_report_node
     )
     
     # ===== 4. 生成工作流流程图 =====
