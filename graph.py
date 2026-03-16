@@ -102,6 +102,18 @@ class ReviewResult(TypedDict, total=False):
     suggestions: List[str]                 # 改进建议
 
 
+class SimulationResult(TypedDict, total=False):
+    """24小时粗仿真结果数据结构"""
+    time_labels: List[str]                 # 时间标签（24小时）
+    it_load_curve_mw: List[float]          # IT 负载曲线（MW）
+    green_supply_curve_mw: List[float]     # 绿电供应曲线（MW）
+    storage_power_curve_mw: List[float]    # 储能充放曲线（MW，放电为正，充电为负）
+    pv_curve_mw: List[float]               # 光伏出力曲线（MW）
+    ppa_curve_mw: List[float]              # 长协绿电曲线（MW）
+    soc_curve: List[float]                 # 储能SOC曲线（0-1）
+    summary: Dict[str, Any]                # 仿真汇总指标
+
+
 class FinancialAnalysis(TypedDict, total=False):
     """财务分析数据结构"""
     capex: Dict[str, float]                # 建设成本明细（万元）
@@ -143,6 +155,9 @@ class GreenDataCenterState(TypedDict, total=False):
     
     # ===== Agent 3: 暖通与制冷架构专家 =====
     cooling_plan: Optional[CoolingPlan]
+
+    # ===== Agent 4: 24小时粗仿真专家 =====
+    simulation_result: Optional[SimulationResult]
     
     # ===== Agent 4: 方案审核与评估专家 =====
     review_result: Optional[ReviewResult]
@@ -207,6 +222,7 @@ def create_initial_state(
         "load_profile": None,
         "energy_plan": None,
         "cooling_plan": None,
+        "simulation_result": None,
         "financial_analysis": None,
         "iteration_count": 0,
         "max_iterations": 3,
@@ -280,6 +296,7 @@ def build_datacenter_workflow(
     requirement_analysis_node,
     energy_planner_node,
     cooling_specialist_node,
+    simulation_node,
     review_node, 
     financial_consultant_node,
     final_report_node
@@ -291,10 +308,11 @@ def build_datacenter_workflow(
         1. Agent 1 (需求解析) → 
         2. Agent 2 (能源规划) → 
         3. Agent 3 (制冷设计) → 
-        4. Agent 4 (财务分析) →
-        5. Agent 5 (审核评估) → [条件分支]
-        - 通过 → Agent 6 (报告生成) → END
-        - 达到最大重试次数 → Agent 6 (报告生成) → END
+        4. Agent 4 (24小时粗仿真) →
+        5. Agent 5 (财务分析) →
+        6. Agent 6 (审核评估) → [条件分支]
+        - 通过 → Agent 7 (报告生成) → END
+        - 达到最大重试次数 → Agent 7 (报告生成) → END
         - 不通过 → 返回 Agent 1/2/3 重新优化（带反馈意见）
     
     流程图:
@@ -304,9 +322,11 @@ def build_datacenter_workflow(
                      ↓
                cooling_design
                      ↓
-                financial_analysis
+                                 simulation
                      ↓
-                   review_node
+                                financial_analysis
+                                         ↓
+                                     review_node
                  /          \
          (通过) /            \ (不通过，需要重试)
              ↓              ↓
@@ -321,6 +341,7 @@ def build_datacenter_workflow(
     workflow.add_node("requirement_analysis", requirement_analysis_node)
     workflow.add_node("energy_planning", energy_planner_node)
     workflow.add_node("cooling_design", cooling_specialist_node)
+    workflow.add_node("simulation", simulation_node)
     workflow.add_node("financial_analysis", financial_consultant_node)
     workflow.add_node("review", review_node)  # 审核节点
     workflow.add_node("final_report", final_report_node)
@@ -331,7 +352,8 @@ def build_datacenter_workflow(
     # 添加边 - 顺序执行前 3 个节点
     workflow.add_edge("requirement_analysis", "energy_planning")
     workflow.add_edge("energy_planning", "cooling_design")
-    workflow.add_edge("cooling_design", "financial_analysis")
+    workflow.add_edge("cooling_design", "simulation")
+    workflow.add_edge("simulation", "financial_analysis")
     workflow.add_edge("financial_analysis", "review")
     
     # 添加条件边 - 根据审核结果决定流程走向
@@ -354,6 +376,7 @@ def create_datacenter_agent_system(
     requirement_analysis_node,
     energy_planner_node,
     cooling_specialist_node,
+    simulation_node,
     review_node, 
     financial_consultant_node,
     final_report_node,
@@ -366,6 +389,7 @@ def create_datacenter_agent_system(
         requirement_analysis_node: 需求与约束解析专家节点函数
         energy_planner_node: 能源与绿电规划专家节点函数
         cooling_specialist_node: 暖通与制冷架构专家节点函数
+        simulation_node: 24小时粗仿真节点函数
         review_node: 方案审核与评估专家节点函数
         financial_consultant_node: 综合评价与投资决策专家节点函数
         final_report_node: 最终报告生成节点函数
@@ -379,6 +403,7 @@ def create_datacenter_agent_system(
         requirement_analysis_node=requirement_analysis_node,
         energy_planner_node=energy_planner_node,
         cooling_specialist_node=cooling_specialist_node,
+        simulation_node=simulation_node,
         review_node=review_node,
         financial_consultant_node=financial_consultant_node,
         final_report_node=final_report_node
@@ -439,6 +464,14 @@ def print_state_summary(state: GreenDataCenterState) -> None:
     if financial:
         print(f"\n💰 投资回收期: {financial.get('payback_period', 'N/A')} 年")
         print(f"📈 内部收益率: {financial.get('irr', 'N/A')}%")
+
+    # 仿真结果
+    simulation = state.get("simulation_result")
+    if simulation and simulation.get("summary"):
+        summary = simulation.get("summary", {})
+        print(f"\n📈 日IT电量: {summary.get('daily_it_energy_mwh', 'N/A')} MWh")
+        print(f"🌿 日绿电供给: {summary.get('daily_green_supply_mwh', 'N/A')} MWh")
+        print(f"🔋 日绿电占比: {summary.get('daily_green_ratio_pct', 'N/A')}%")
     
     print("\n" + "="*60)
 
@@ -635,6 +668,7 @@ if __name__ == "__main__":
     from nodes.requirement_analysis_node import requirement_analysis_node
     from nodes.energy_planner_node import energy_planner_node
     from nodes.cooling_specialist_node import cooling_specialist_node
+    from nodes.simulation_node import simulation_node
     from nodes.review_node import review_node 
     from nodes.financial_consultant_node import financial_consultant_node
     from nodes.final_report_node import final_report_node
@@ -657,6 +691,7 @@ if __name__ == "__main__":
         requirement_analysis_node=requirement_analysis_node,
         energy_planner_node=energy_planner_node,
         cooling_specialist_node=cooling_specialist_node,
+        simulation_node=simulation_node,
         review_node=review_node,
         financial_consultant_node=financial_consultant_node,
         final_report_node=final_report_node

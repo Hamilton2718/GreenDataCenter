@@ -32,7 +32,7 @@ def calculate_metrics_from_state(state: Dict[str, Any]) -> Dict[str, Any]:
             - environmental_data: 环境数据
             - energy_plan: 能源规划方案
             - cooling_plan: 制冷方案
-            - review_result: 审核结果（替换了 simulation_result）
+            - simulation_result: 24小时粗仿真结果（可选）
             
     返回:
         财务指标字典
@@ -42,7 +42,7 @@ def calculate_metrics_from_state(state: Dict[str, Any]) -> Dict[str, Any]:
     env_data = state.get("environmental_data", {})
     energy_plan = state.get("energy_plan", {})
     cooling_plan = state.get("cooling_plan", {})
-    review_result = state.get("review_result", {})  # 新增：审核结果
+    simulation_result = state.get("simulation_result", {})
     
     # ===== 2. 基本参数（来自 Agent 1）=====
     location = user_reqs.get("location", "乌兰察布")
@@ -62,31 +62,47 @@ def calculate_metrics_from_state(state: Dict[str, Any]) -> Dict[str, Any]:
     expected_pue = cooling_plan.get("estimated_pue", 1.5)
     cooling_cost = cooling_plan.get("incremental_cost", 0)  # 万元
     
-    # ===== 5. 【修改】不再使用仿真数据，改为基于经验公式估算 =====
-    # 现在基于能源方案和制冷方案估算
+    # ===== 5. 优先使用仿真结果；缺失时回退经验估算 =====
     actual_pue = expected_pue  # 假设实际 PUE 等于设计 PUE
-    
-    # 估算年绿电消纳量（基于光伏装机容量和当地日照）
-    annual_sunshine_hours = env_data.get("annual_sunshine_hours", 3000)  # 小时
-    pv_generation = pv_capacity * annual_sunshine_hours / 1000  # MWh/年（简单估算）
-    
-    # 估算年购电量
-    total_electricity = planned_load * actual_pue * 8760 / 1000  # MWh/年
-    green_consumption = pv_generation  # 假设自发自用全部消纳
-    annual_grid_purchase = total_electricity - green_consumption  # 剩余从电网购买
+
+    total_electricity = 0.0
+    green_consumption = 0.0
+    annual_grid_purchase = 0.0
+
+    sim_summary = simulation_result.get("summary", {}) if simulation_result else {}
+    it_curve = simulation_result.get("it_load_curve_mw", []) if simulation_result else []
+    green_curve = simulation_result.get("green_supply_curve_mw", []) if simulation_result else []
+
+    has_valid_simulation = bool(it_curve) and bool(green_curve) and len(it_curve) == len(green_curve) == 24
+
+    if has_valid_simulation:
+        daily_it_mwh = float(sim_summary.get("daily_it_energy_mwh", sum(it_curve)))
+        # 绿电只按可消纳部分计入，避免高估
+        daily_green_mwh = float(sim_summary.get("daily_green_supply_mwh", sum(min(green_curve[i], it_curve[i]) for i in range(24))))
+
+        total_electricity = daily_it_mwh * 365.0
+        green_consumption = max(0.0, daily_green_mwh) * 365.0
+        annual_grid_purchase = max(0.0, total_electricity - green_consumption)
+    else:
+        # 经验公式估算：基于光伏装机与日照
+        annual_sunshine_hours = env_data.get("annual_sunshine_hours", 3000)  # 小时
+        pv_generation = pv_capacity * annual_sunshine_hours / 1000  # MWh/年（简单估算）
+
+        total_electricity = planned_load * actual_pue * 8760 / 1000  # MWh/年
+        green_consumption = pv_generation
+        annual_grid_purchase = max(0.0, total_electricity - green_consumption)
     
     # 碳减排量（基于绿电消纳）
     emission_factor = 0.8 / 1000  # tCO2/kWh（默认值）
     carbon_reduction = green_consumption * 1000 * emission_factor  # 吨 CO2/年
     
     # ===== 6. 计算总用电量 =====
-    # 方法 1: 理论计算
+    # 方法 1: 理论计算（用于异常回退）
     total_electricity_theory = planned_load * actual_pue * 8760 / 1000  # MWh
-    
-    # 方法 2: 仿真数据
+    # 方法 2: 由仿真或估算已得到
     total_electricity_sim = annual_grid_purchase + green_consumption  # MWh
-    
-    # 优先使用仿真数据（如果合理）
+
+    # 优先使用已得到的数据
     total_electricity = total_electricity_sim if total_electricity_sim > 0 else total_electricity_theory
     
     # ===== 7. 绿电比例 =====
@@ -166,7 +182,8 @@ def calculate_metrics_from_state(state: Dict[str, Any]) -> Dict[str, Any]:
         'emission_reduction': round(emission_reduction_calc, 2),  # tCO2/年
         'lifetime_reduction': round(lifetime_reduction, 2),  # tCO2
         'cooling_tech': cooling_tech,
-        'curtailment_rate': 0  # 不再使用仿真数据，弃光率设为 0
+        'curtailment_rate': 0,
+        'simulation_used': has_valid_simulation
     }
     
     return results
@@ -196,7 +213,7 @@ def financial_consultant_node(state: dict) -> dict:
             - financial_analysis: 财务分析
     """
     print("\n" + "="*60)
-    print("💰 [Agent 5: 综合评价与投资决策专家] 开始工作")
+    print("💰 [综合评价与投资决策专家] 开始工作")
     print("="*60)
     
     # 打印输入数据摘要
@@ -221,7 +238,7 @@ def financial_consultant_node(state: dict) -> dict:
     }
     
     print("\n" + "="*60)
-    print("✅ [Agent 5: 综合评价与投资决策专家] 工作完成")
+    print("✅ [综合评价与投资决策专家] 工作完成")
     print("="*60)
     
     # 返回更新后的状态（不再包含 final_report）

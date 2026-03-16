@@ -11,9 +11,10 @@ Available Nodes:
     - requirement_analysis_node: 需求与约束解析专家 (Agent 1)
     - energy_planner_node: 能源与绿电规划专家 (Agent 2)
     - cooling_specialist_node: 暖通与制冷架构专家 (Agent 3)
-    - review_node: 方案审核与评估专家 (Agent 4)  # 新增
-    - financial_consultant_node: 综合评价与投资决策专家 (Agent 5)
-    - final_report_node: 最终报告生成节点 (Agent 6)
+    - simulation_node: 24小时粗仿真专家 (Agent 4)
+    - review_node: 方案审核与评估专家 (Agent 5)  # 新增
+    - financial_consultant_node: 综合评价与投资决策专家 (Agent 6)
+    - final_report_node: 最终报告生成节点 (Agent 7)
 
 Usage Example:
     from graph import create_datacenter_agent_system, create_initial_state
@@ -21,6 +22,7 @@ Usage Example:
         requirement_analysis_node,
         energy_planner_node,
         cooling_specialist_node,
+        simulation_node,
         review_node,  # 新增
         financial_consultant_node,
         final_report_node
@@ -31,6 +33,7 @@ Usage Example:
         requirement_analysis_node=requirement_analysis_node,
         energy_planner_node=energy_planner_node,
         cooling_specialist_node=cooling_specialist_node,
+        simulation_node=simulation_node,
         review_node=review_node,  # 新增
         financial_consultant_node=financial_consultant_node,
         final_report_node=final_report_node
@@ -54,6 +57,7 @@ from graph import (
     LoadProfile,
     EnergyPlan,
     CoolingPlan,
+    SimulationResult,
     ReviewResult,  # 替换 SimulationResult
     FinancialAnalysis,
 )
@@ -85,6 +89,21 @@ except ImportError:
         """占位函数：暖通与制冷架构专家"""
         print("⚠️ [Agent 3] 暖通与制冷架构专家 - 占位实现")
         # 返回原状态，保持流程继续
+        return state
+
+try:
+    from nodes.simulation_node import simulation_node
+except ImportError:
+    def simulation_node(state):
+        """占位函数：24小时粗仿真专家"""
+        print("⚠️ [Agent 4] 24小时粗仿真专家 - 占位实现")
+        state["simulation_result"] = {
+            "time_labels": [f"{h}:00" for h in range(24)],
+            "it_load_curve_mw": [0.0] * 24,
+            "green_supply_curve_mw": [0.0] * 24,
+            "storage_power_curve_mw": [0.0] * 24,
+            "summary": {"method": "fallback"}
+        }
         return state
 
 try:
@@ -136,6 +155,7 @@ __all__ = [
     'LoadProfile',
     'EnergyPlan',
     'CoolingPlan',
+    'SimulationResult',
     'ReviewResult',  # 替换 SimulationResult
     'FinancialAnalysis',
     
@@ -143,7 +163,8 @@ __all__ = [
     'requirement_analysis_node',    # Agent 1
     'energy_planner_node',          # Agent 2
     'cooling_specialist_node',      # Agent 3
-    'review_node',                  # Agent 4 (新增)
-    'financial_consultant_node',    # Agent 5
-    'final_report_node',            # Agent 6
+    'simulation_node',              # Agent 4
+    'review_node',                  # Agent 5 (新增)
+    'financial_consultant_node',    # Agent 6
+    'final_report_node',            # Agent 7
 ]

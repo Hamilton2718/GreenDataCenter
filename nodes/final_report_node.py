@@ -1,5 +1,5 @@
 """
-Agent 6: 最终报告生成节点 (Final Report Node)
+最终报告生成节点 (Final Report Node)
 
 将 LangGraph 最终状态整理为 Markdown 报告，写入 state["final_report"]。
 """
@@ -21,6 +21,8 @@ def generate_final_report(state: Dict[str, Any]) -> str:
     env_data = state.get("environmental_data", {}) or {}
     energy_plan = state.get("energy_plan", {}) or {}
     cooling_plan = state.get("cooling_plan", {}) or {}
+    simulation = state.get("simulation_result", {}) or {}
+    sim_summary = simulation.get("summary", {}) if simulation else {}
     financial = state.get("financial_analysis", {}) or {}
 
     report = f"""# 数据中心绿电消纳规划设计建议书
@@ -71,6 +73,17 @@ def generate_final_report(state: Dict[str, Any]) -> str:
 | 净现值 (NPV) | {financial.get('npv', 'N/A')} 万元 |
 | 平准化电力成本 (LCOE) | {financial.get('lcoe', 'N/A')} 元/kWh |
 
+## 六、24小时粗仿真摘要
+
+| 指标 | 数值 |
+|------|------|
+| 日IT用电量 | {sim_summary.get('daily_it_energy_mwh', 'N/A')} MWh |
+| 日绿电供给量 | {sim_summary.get('daily_green_supply_mwh', 'N/A')} MWh |
+| 日绿电占比 | {sim_summary.get('daily_green_ratio_pct', 'N/A')}% |
+| 储能日充电量 | {sim_summary.get('daily_storage_charge_mwh', 'N/A')} MWh |
+| 储能日放电量 | {sim_summary.get('daily_storage_discharge_mwh', 'N/A')} MWh |
+| 仿真方法 | {sim_summary.get('method', 'N/A')} |
+
 ---
 *本报告由 GreenDataCenter 智能规划系统自动生成*
 """
@@ -80,7 +93,7 @@ def generate_final_report(state: Dict[str, Any]) -> str:
 
 def final_report_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Agent 6: 最终报告生成节点 - LangGraph Node
+    最终报告生成节点 - LangGraph Node
 
     参数:
         state: GreenDataCenterState 类型状态字典
@@ -90,14 +103,14 @@ def final_report_node(state: Dict[str, Any]) -> Dict[str, Any]:
             - final_report: Markdown 格式最终报告
     """
     print("\n" + "=" * 60)
-    print("📝 [Agent 6: 最终报告生成节点] 开始工作")
+    print("📝 [最终报告生成节点] 开始工作")
     print("=" * 60)
 
     final_report = generate_final_report(state)
     print(f"✅ 最终报告生成完成，长度: {len(final_report)} 字符")
 
     print("\n" + "=" * 60)
-    print("✅ [Agent 6: 最终报告生成节点] 工作完成")
+    print("✅ [最终报告生成节点] 工作完成")
     print("=" * 60)
 
     return {

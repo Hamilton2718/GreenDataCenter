@@ -444,8 +444,5 @@ if __name__ == "__main__":
     print(f"年均温度: {upstream_input['environmental_data']['annual_temperature']}℃")
     print(f"PUE目标: {upstream_input['project_info']['pue_target']}")
 
-    print("\n--- 生成的制冷规划标准化数据包 ---")
-    print(data_packet)
-
     print("\n--- 数据包已转交给 Agent 4 ---")
     print("虚拟运行仿真专家 Agent 4 可以直接读取 'cooling_plan' 进入验证阶段")
