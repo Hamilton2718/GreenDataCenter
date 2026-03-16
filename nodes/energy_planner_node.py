@@ -41,7 +41,7 @@ def _get_llm():
     """获取 LLM 实例（通义千问）"""
     return ChatOpenAI(
         model="qwen-plus",
-        api_key=os.getenv("DASHSCOPE_API_KEY"),
+        api_key="sk-77a4c286b27e4c06aff03cccc38cc9d1",
         base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
     )
 
@@ -113,6 +113,20 @@ def create_energy_specialist_agent():
     1. **现状挑战分析**：结合{location}的年均温 ({temp}℃) 对 PUE {pue_target} 目标的达成可能性进行评估。
     2. **电力消纳策略**：针对 {green_target}% 的绿电目标，结合当前电网碳强度给出初步电力配比方案。
     3. **经济性建议**：利用最大峰谷价差 ({price_diff} 元/kWh) 给出具体的储能套利与运行建议。
+    
+    **同时，请在报告末尾以 JSON 格式输出以下技术参数：**
+    {{  
+      "pv_capacity": 光伏装机容量（kW）,
+      "wind_capacity": 风电装机容量（kW）,
+      "storage_capacity": 储能容量（kWh）,
+      "storage_power": 储能功率（kW）,
+      "ppa_ratio": 绿电长协比例（%）,
+      "grid_ratio": 电网调峰比例（%）,
+      "estimated_self_consumption": 预计自发自用率（%）,
+      "estimated_green_ratio": 预计绿电占比（%）
+    }}
+    
+    请确保 JSON 格式正确，且所有数值为数字类型。
     """
 
     prompt = ChatPromptTemplate.from_template(prompt_template)
@@ -203,8 +217,22 @@ def energy_planner_node(state: dict) -> dict:
     
     # ===== 2. 直接使用电价数据（已是中文格式）=====
     price_data_cn = state.get("electricity_price", {})
-    price_diff = price_data_cn.get("最大峰谷价差", 0)
+    # 确保price_diff的数据类型与requirement_analysis_node.py的electricity_price类型相同
+    price_diff = price_data_cn.get("最大峰谷价差", 0.0)
     print(f"  - 峰谷价差：{price_diff} 元/kWh")
+    
+    # 接收更多数据
+    peak_price = price_data_cn.get("尖峰电价", 0.0)
+    high_price = price_data_cn.get("高峰电价", 0.0)
+    flat_price = price_data_cn.get("平段电价", 0.0)
+    valley_price = price_data_cn.get("低谷电价", 0.0)
+    deep_valley_price = price_data_cn.get("深谷电价", 0.0)
+    
+    print(f"  - 尖峰电价：{peak_price} 元/kWh")
+    print(f"  - 高峰电价：{high_price} 元/kWh")
+    print(f"  - 平段电价：{flat_price} 元/kWh")
+    print(f"  - 低谷电价：{valley_price} 元/kWh")
+    print(f"  - 深谷电价：{deep_valley_price} 元/kWh")
     
     # ===== 3. 构建项目背景上下文 =====
     project_context = _build_project_context(user_req, env_data, price_data_cn)
@@ -226,8 +254,11 @@ def energy_planner_node(state: dict) -> dict:
     print(f"\n🤖 正在调用 LLM 生成能源规划方案...")
     
     try:
+        # 创建能源规划专家Agent
         agent = create_energy_specialist_agent()
-        llm_report = agent.invoke({
+        
+        # 准备LLM输入参数
+        llm_input = {
             "project_context": project_context,
             "api_data": api_data,
             "location": location,
@@ -235,11 +266,39 @@ def energy_planner_node(state: dict) -> dict:
             "pue_target": pue_target,
             "green_target": green_target,
             "price_diff": price_diff
-        })
-        print(f"✅ LLM 方案生成成功，报告长度: {len(llm_report)} 字符")
+        }
+        
+        # 调用LLM生成方案
+        llm_output = agent.invoke(llm_input)
+        print(f"✅ LLM方案生成成功，输出长度: {len(llm_output)} 字符")
+        
+        # 解析LLM输出，提取Markdown报告和JSON参数
+        import json
+        
+        # 查找JSON部分的开始和结束位置
+        json_start = llm_output.find('{')
+        json_end = llm_output.rfind('}') + 1
+        
+        if json_start != -1 and json_end != -1:
+            # 提取Markdown报告部分
+            llm_report = llm_output[:json_start].strip()
+            
+            # 提取并解析JSON部分
+            try:
+                json_str = llm_output[json_start:json_end]
+                tech_params = json.loads(json_str)
+                print(f"✅ 成功解析技术参数: {list(tech_params.keys())}")
+            except json.JSONDecodeError:
+                print("⚠️ 无法解析JSON部分，使用默认值")
+                tech_params = {}
+        else:
+            # 如果没有找到JSON部分，使用整个输出作为报告
+            llm_report = llm_output
+            tech_params = {}
     except Exception as e:
         print(f"❌ LLM 调用失败: {e}")
         llm_report = f"LLM 调用失败，请检查 DASHSCOPE_API_KEY 环境变量。错误: {e}"
+        tech_params = {}
     
     # ===== 6. 构建 energy_plan 输出 =====
     # 保持与 graph.py 中 EnergyPlan 类型定义兼容
@@ -247,15 +306,15 @@ def energy_planner_node(state: dict) -> dict:
         # LLM 生成的完整报告
         "llm_report": llm_report,
         
-        # 以下字段为占位，可由后续逻辑或 LLM 解析填充
-        "pv_capacity": 0.0,           # 光伏装机容量（kW）
-        "wind_capacity": 0.0,         # 风电装机容量（kW）
-        "storage_capacity": 0.0,      # 储能容量（kWh）
-        "storage_power": 0.0,         # 储能功率（kW）
-        "ppa_ratio": 0.0,             # 绿电长协比例（%）
-        "grid_ratio": 0.0,            # 电网调峰比例（%）
-        "estimated_self_consumption": 0.0,  # 预计自发自用率（%）
-        "estimated_green_ratio": green_target,  # 预计绿电占比（%）
+        # 使用LLM解析出的技术参数，或使用默认值
+        "pv_capacity": tech_params.get("pv_capacity", 0.0),           # 光伏装机容量（kW）
+        "wind_capacity": tech_params.get("wind_capacity", 0.0),         # 风电装机容量（kW）
+        "storage_capacity": tech_params.get("storage_capacity", 0.0),      # 储能容量（kWh）
+        "storage_power": tech_params.get("storage_power", 0.0),         # 储能功率（kW）
+        "ppa_ratio": tech_params.get("ppa_ratio", 0.0),             # 绿电长协比例（%）
+        "grid_ratio": tech_params.get("grid_ratio", 0.0),            # 电网调峰比例（%）
+        "estimated_self_consumption": tech_params.get("estimated_self_consumption", 0.0),  # 预计自发自用率（%）
+        "estimated_green_ratio": tech_params.get("estimated_green_ratio", green_target),  # 预计绿电占比（%）
         
         # 原始数据（供后续 Agent 使用）
         "price_data_cn": price_data_cn,

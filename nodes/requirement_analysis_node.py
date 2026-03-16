@@ -215,7 +215,13 @@ class DataCenterAgent1:
         返回:
             str: 省份名称（不带"省"字）
         """
-        # 1. 首先尝试使用OpenCage API（通过经纬度）
+        # 1. 首先检查备用城市到省份的映射
+        if city_name in CITY_TO_PROVINCE:
+            province = CITY_TO_PROVINCE[city_name]
+            print(f"✅ 使用备用映射获取省份: {province}")
+            return province
+        
+        # 2. 尝试使用OpenCage API（通过经纬度）
         print(f"🔍 开始获取{city_name}的省份信息")
         latitude, longitude = self.get_coordinates(city_name)
         opencage_result = self.get_province_from_coordinates_opencage(latitude, longitude)
@@ -230,16 +236,14 @@ class DataCenterAgent1:
         else:
             print("⚠️ OpenCage API获取省份失败")
         
-        # 2. 如果OpenCage API失败，尝试使用geopy
+        # 3. 如果OpenCage API失败，尝试使用geopy
         if has_geopy:
             try:
                 # 初始化地理编码器
-                geolocator = Nominatim(user_agent="data_center_project/your_email@example.com")
-                # 添加请求频率限制
-                from geopy.extra.rate_limiter import RateLimiter
-                geocode = RateLimiter(geolocator.geocode, min_delay_seconds=1)
+                geolocator = Nominatim(user_agent="data_center_project/your_email@example.com", timeout=1)
+                # 直接调用，不使用RateLimiter以避免长时间等待
                 # 查询城市（限定中国区域）
-                location = geocode(f"{city_name}, China")
+                location = geolocator.geocode(f"{city_name}, China")
                 
                 if location:
                     # 完整地址解析结果
@@ -264,15 +268,9 @@ class DataCenterAgent1:
         else:
             print("⚠️ geopy库不可用")
         
-        # 3. 如果OpenCage API和geopy都失败，使用备用城市到省份的映射
-        if city_name in CITY_TO_PROVINCE:
-            province = CITY_TO_PROVINCE[city_name]
-            print(f"⚠️ 使用备用映射获取省份: {province}")
-            return province
-        else:
-            # 如果在备用映射中也找不到，返回默认值（北京）
-            print(f"⚠️ 未找到{city_name}对应的省份，使用默认值（北京）")
-            return "北京"
+        # 4. 如果所有方法都失败，返回默认值（北京）
+        print(f"⚠️ 未找到{city_name}对应的省份，使用默认值（北京）")
+        return "北京"
     
     def get_carbon_emission_factor(self, city_name):
         """
