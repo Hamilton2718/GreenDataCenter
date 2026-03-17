@@ -136,8 +136,16 @@ class CoolingAgent3:
         # 不再维护 RAG，直接使用标准接口查询
         pass
         
-        # 初始化 LLM
-        self.llm = ChatTongyi(model="qwen-plus", temperature=0.1)
+        # 初始化 LLM（尝试）
+        try:
+            self.llm = ChatTongyi(
+            model="qwen-plus", 
+            temperature=0.1,
+            dashscope_api_key="sk-77a4c286b27e4c06aff03cccc38cc9d1"  # 正确传入 API Key
+    )
+        except Exception as e:
+            print(f"⚠️ LLM 初始化失败: {e}，将使用兜底参数")
+            self.llm = None
 
     def retrieve_context(self, region: str, province: str, annual_temp: float, cabinet_power: float) -> str:
         """从知识库检索相关信息并构建上下文（使用标准接口）"""

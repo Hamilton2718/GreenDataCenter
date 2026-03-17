@@ -447,7 +447,7 @@ const energyChartOption = computed(() => ({
 }))
 
 // 导出报告
-const exportReport = (format) => {
+const exportReport = (format: 'md' | 'html') => {
   if (!energyPlan.value.llm_report) return
   
   let content = energyPlan.value.llm_report
@@ -480,12 +480,44 @@ const exportReport = (format) => {
 const fetchEnergyPlan = async () => {
   try {
     ElMessage.info('正在获取能源规划数据...')
+    
+    // 构建后端期望的参数结构
+    const requestData = {
+      user_requirements: {
+        location: projectStore.requirement.location,
+        business_type: projectStore.requirement.businessType,
+        planned_area: projectStore.requirement.area,
+        planned_load: projectStore.requirement.load * 1000, // 转换为kW
+        computing_power_density: projectStore.requirement.density,
+        priority: projectStore.requirement.priority.join(','),
+        green_energy_target: projectStore.requirement.greenTarget,
+        pue_target: projectStore.requirement.pueTarget,
+        budget_constraint: projectStore.requirement.budget
+      },
+      environmental_data: {
+        annual_temperature: projectStore.envData.climate.avgTemp,
+        annual_wind_speed: projectStore.envData.climate.windSpeed,
+        annual_sunshine_hours: projectStore.envData.climate.solarRadiation,
+        carbon_emission_factor: projectStore.envData.carbonFactor
+      },
+      electricity_price: {
+        peak_price: projectStore.envData.electricity.peakPrice,
+        high_price: projectStore.envData.electricity.highPrice,
+        flat_price: projectStore.envData.electricity.flatPrice,
+        low_price: projectStore.envData.electricity.valleyPrice,
+        deep_low_price: projectStore.envData.electricity.deepValleyPrice,
+        max_price_diff: projectStore.envData.electricity.maxPriceDiff
+      }
+    }
+    
+    console.log('发送给后端的数据:', requestData)
+    
     const response = await fetch('/api/agent2/energy-plan', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(projectStore.requirement)
+      body: JSON.stringify(requestData)
     })
     const data = await response.json()
     if (data.success) {
@@ -554,8 +586,10 @@ onMounted(() => {
   // 模拟Agent 2和3正在工作
   setTimeout(() => {
     projectStore.updateAgentStatus('agent2', true)
-    agents.value[1].status = true
-    agents.value[1].progress = 100
+    if (agents.value[1]) {
+      agents.value[1].status = true
+      agents.value[1].progress = 100
+    }
     // 获取能源规划数据
     fetchEnergyPlan()
   }, 2000)

@@ -603,7 +603,8 @@ const activeStep = computed(() => {
 })
 
 const getAgentColor = (agentId: string) => {
-  const status = agentStatus.value[agentId as keyof typeof agentStatus.value].status
+  const agentItem = agentStatus.value[agentId as keyof typeof agentStatus.value]
+  const status = agentItem?.status || 'idle'
   switch (status) {
     case 'processing':
       return '#409eff'
@@ -617,7 +618,8 @@ const getAgentColor = (agentId: string) => {
 }
 
 const getAgentIcon = (agentId: string) => {
-  const status = agentStatus.value[agentId as keyof typeof agentStatus.value].status
+  const agentItem = agentStatus.value[agentId as keyof typeof agentStatus.value]
+  const status = agentItem?.status || 'idle'
   switch (status) {
     case 'processing':
       return 'Loading'
