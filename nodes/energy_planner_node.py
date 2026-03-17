@@ -50,15 +50,15 @@ def _get_llm():
 
 def get_detailed_carbon_data(zone: str = "CN") -> str:
     """
-    调用 Electricity Maps API 获取实时电网碳强度数据
+    调用 Electricity Maps API 获取实时电网能源数据
     
     参数:
         zone: 区域代码，中国区域可用 "CN"
         
     返回:
-        格式化的碳数据报告字符串
+        格式化的电网能源报告字符串
     """
-    url = f"https://api.electricitymaps.com/v3/carbon-intensity/latest?zone={zone}"
+    url = f"https://api.electricitymaps.com/v3/renewable-energy/latest?zone={zone}"
     headers = {
         "auth-token": "PmQxZjp5WQZZbgz844Vv"
     }
@@ -68,17 +68,16 @@ def get_detailed_carbon_data(zone: str = "CN") -> str:
         if response.status_code == 200:
             data = response.json()
             info = (
-                f"--- 实时电网碳数据报告 ---\n"
+                f"--- 实时电网能源数据报告 ---\n"
                 f"1. 目标区域 (zone): {data.get('zone')}\n"
-                f"2. 碳强度值 (carbonIntensity): {data.get('carbonIntensity')} gCO2eq/kWh\n"
+                f"2. 可再生能源比例 (renewablePercentage): {data.get('value')}{data.get('unit', '%')}\n"
                 f"3. 数据时间 (datetime): {data.get('datetime')}\n"
-                f"4. 排放因子类型 (emissionFactorType): {data.get('emissionFactorType')}\n"
             )
             return info
         else:
-            return f"API 请求失败，状态码：{response.status_code}，使用本地碳排因子"
+            return f"API 请求失败，状态码：{response.status_code}，使用本地电网能源数据"
     except Exception as e:
-        return f"API 调用异常：{str(e)}，将使用本地碳排因子"
+        return f"API 调用异常：{str(e)}，将使用本地电网能源数据"
 
 
 # ============================================================
