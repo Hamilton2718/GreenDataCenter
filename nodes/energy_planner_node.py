@@ -1,7 +1,7 @@
 """
 Agent 2: 能源与绿电规划专家 (Energy Planner)
 
-由 XSimple 开发的 LLM 驱动能源规划方案
+LLM 驱动能源规划方案
 改造为 LangGraph 节点，与 Agent 1 输出格式兼容
 
 功能:
@@ -16,8 +16,6 @@ Agent 2: 能源与绿电规划专家 (Energy Planner)
 输出状态:
     - energy_plan: 能源规划方案 (包含 LLM 生成的报告)
 
-作者: XSimple & GreenDataCenter Team
-版本: 2.0.0
 """
 
 import os
