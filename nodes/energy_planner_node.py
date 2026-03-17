@@ -48,7 +48,7 @@ def _get_llm():
 # 2. API 调用函数 (保持原有逻辑)
 # ============================================================
 
-def get_detailed_carbon_data(zone: str = "CN") -> str:
+def get_detailed_energy_data(zone: str = "CN") -> str:
     """
     调用 Electricity Maps API 获取实时电网能源数据
     
@@ -237,7 +237,7 @@ def energy_planner_node(state: dict) -> dict:
     
     # ===== 4. 获取实时电网碳数据 =====
     print(f"\n🌐 正在获取实时电网碳数据...")
-    api_data = get_detailed_carbon_data(zone="CN")
+    api_data = get_detailed_energy_data(zone="CN")
     
     if "失败" in api_data or "异常" in api_data:
         print(f"⚠️ {api_data}")
