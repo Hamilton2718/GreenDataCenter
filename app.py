@@ -147,6 +147,9 @@ class EnvironmentAnalysisAgent:
 # 导入energy_planner_node
 from nodes.energy_planner_node import energy_planner_node
 
+# 导入cooling_specialist_node
+from nodes.cooling_specialist_node import cooling_specialist_node
+
 # 能源规划Agent
 class EnergyPlanAgent:
     """
@@ -318,6 +321,31 @@ def agent2_energy_plan():
         return jsonify({
             'success': True,
             'data': energy_plan
+        })
+    except Exception as e:
+        print(f"错误: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/agent3/cooling-plan', methods=['POST'])
+def agent3_cooling_plan():
+    """
+    Agent 3专用接口：生成制冷方案
+    """
+    try:
+        # 获取前端发送的JSON数据
+        data = request.json
+        print(f"接收到的Agent 3数据: {data}")
+        
+        # 调用cooling_specialist_node生成制冷方案
+        result = cooling_specialist_node(data)
+        
+        # 提取制冷方案
+        cooling_plan = result.get("cooling_plan", {})
+        
+        # 返回结果
+        return jsonify({
+            'success': True,
+            'data': cooling_plan
         })
     except Exception as e:
         print(f"错误: {str(e)}")

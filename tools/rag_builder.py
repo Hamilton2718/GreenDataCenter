@@ -95,24 +95,45 @@ def build_or_load_vector_store(rebuild: bool = False):
     返回: 一个 FAISS 向量存储对象，如果没有任何文档则返回 None。
     """
     print("\n--- RAG 知识库模块 --- ")
-    if rebuild or not os.path.exists(VECTOR_STORE_PATH):
-        if rebuild:
-            print("🔧 检测到 'rebuild=True'，将强制重建知识库。")
+    
+    # 检查SentenceTransformerEmbeddings是否可用
+    if SentenceTransformerEmbeddings is None:
+        print("⚠️ SentenceTransformerEmbeddings不可用，返回 None")
+        return None
+    
+    try:
+        if rebuild or not os.path.exists(VECTOR_STORE_PATH):
+            if rebuild:
+                print("🔧 检测到 'rebuild=True'，将强制重建知识库。")
+            else:
+                print("⚠️ 未发现已缓存的向量数据库，将开始构建新的知识库。")
+            
+            # 执行完整的构建流程
+            documents = load_documents(KNOWLEDGE_BASE_PATH)
+            vector_store = build_vector_store(documents)
         else:
-            print("⚠️ 未发现已缓存的向量数据库，将开始构建新的知识库。")
+            # 直接加载已有的向量存储
+            print(f"✅ 发现已缓存的向量数据库，直接从 '{VECTOR_STORE_PATH}' 加载。")
+            print(f"🧠 正在初始化嵌入模型: '{EMBEDDING_MODEL_NAME}'...")
+            try:
+                # 检查SentenceTransformerEmbeddings是否可用
+                if SentenceTransformerEmbeddings is None:
+                    raise Exception("SentenceTransformerEmbeddings不可用")
+                
+                # 尝试初始化嵌入模型
+                embeddings = SentenceTransformerEmbeddings(model_name=EMBEDDING_MODEL_NAME)
+                
+                # 尝试加载向量存储
+                vector_store = FAISS.load_local(VECTOR_STORE_PATH, embeddings, allow_dangerous_deserialization=True)
+                print("✅ 向量数据库加载成功。")
+            except Exception as e:
+                print(f"⚠️ 向量数据库加载失败: {e}，返回 None")
+                return None
         
-        # 执行完整的构建流程
-        documents = load_documents(KNOWLEDGE_BASE_PATH)
-        vector_store = build_vector_store(documents)
-    else:
-        # 直接加载已有的向量存储
-        print(f"✅ 发现已缓存的向量数据库，直接从 '{VECTOR_STORE_PATH}' 加载。")
-        print(f"🧠 正在初始化嵌入模型: '{EMBEDDING_MODEL_NAME}'...")
-        embeddings = SentenceTransformerEmbeddings(model_name=EMBEDDING_MODEL_NAME)
-        vector_store = FAISS.load_local(VECTOR_STORE_PATH, embeddings, allow_dangerous_deserialization=True)
-        print("✅ 向量数据库加载成功。")
-        
-    return vector_store
+        return vector_store
+    except Exception as e:
+        print(f"⚠️ RAG 知识库初始化失败: {e}，返回 None")
+        return None
 
 
 # ============================================================

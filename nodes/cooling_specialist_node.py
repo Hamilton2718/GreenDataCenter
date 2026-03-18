@@ -149,29 +149,17 @@ class CoolingAgent3:
 
     def retrieve_context(self, region: str, province: str, annual_temp: float, cabinet_power: float) -> str:
         """从知识库检索相关信息并构建上下文（使用标准接口）"""
-        queries = [
-            f"{province} 数据中心 PUE WUE 标准 规范",
-            f"{province} 数据中心 算力密度 {cabinet_power}kW 制冷方案推荐",
-            f"年均温度 {annual_temp}度 数据中心 制冷 节能"
-        ]
-        
-        docs_content = []
-        print("🔍 正在通过 RAG 检索当地制冷政策与技术规范...")
-        
-        # 使用标准接口 query_knowledge_base_as_text 直接获取拼接好的文本
-        for q in queries:
-            context_text = query_knowledge_base_as_text(q, k=3)
-            if context_text:
-                docs_content.append(context_text)
-        
-        # 如果没有检索到，使用内置规则生成一段上下文供大模型参考
-        if not docs_content:
-            print("⚠️ 未检索到有效知识，启用本地兜底规则构建上下文...")
+        try:
+            # 直接返回兜底文本，避免RAG检索超时
+            print("⚠️ 跳过RAG检索，直接使用本地兜底规则构建上下文...")
             regional_params = PROVINCE_COOLING_BASE_PARAMS.get(province, PROVINCE_COOLING_BASE_PARAMS["default"])
             fallback_text = f"{province}地区数据中心强制要求PUE限值≤{regional_params['PUE_Limit']}，WUE限值≤{regional_params['WUE_Limit']} L/kWh。针对{cabinet_power}kW/机柜的算力（限值{regional_params['cabinet_power_limit']}），超限建议采用液冷技术，未超限建议风冷结合自然冷却。年均温{annual_temp}℃下，需注重节水与干冷。"
-            docs_content.append(fallback_text)
-
-        return "\n".join(docs_content)
+            return fallback_text
+        except Exception as e:
+            print(f"⚠️ 构建上下文失败: {e}，启用本地兜底规则")
+            regional_params = PROVINCE_COOLING_BASE_PARAMS.get(province, PROVINCE_COOLING_BASE_PARAMS["default"])
+            fallback_text = f"{province}地区数据中心强制要求PUE限值≤{regional_params['PUE_Limit']}，WUE限值≤{regional_params['WUE_Limit']} L/kWh。针对{cabinet_power}kW/机柜的算力（限值{regional_params['cabinet_power_limit']}），超限建议采用液冷技术，未超限建议风冷结合自然冷却。年均温{annual_temp}℃下，需注重节水与干冷。"
+            return fallback_text
 
     def get_cop_correction_factor(self, annual_temp: float) -> float:
         """根据年均温度获取COP修正系数"""

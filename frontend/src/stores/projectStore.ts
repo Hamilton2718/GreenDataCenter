@@ -21,6 +21,44 @@ export interface AgentStatus {
   agent5: boolean
 }
 
+export interface CoolingPlan {
+  primary?: string
+  secondary?: string
+  pue?: number
+  cooling_technology?: string
+  estimated_pue?: number
+  predicted_wue?: number
+  scheme_detail_brief?: string
+  waste_heat_recovery_strategy?: string
+  cooling_project_info?: {
+    location?: string
+    it_load_kW?: number
+    cabinet_power_kW?: number
+    target_pue?: number
+    green_energy_target?: number
+    province?: string
+  }
+  cooling_calc_params?: {
+    PUE_Limit?: number
+    WUE_Limit?: number
+    cabinet_power_limit?: number
+    cooling_eff_coeff?: number
+    facility_loss_coeff?: number
+    regional_cooling_preference?: string
+    waste_heat_recovery_coeff?: number
+  }
+  cooling_kpis?: {
+    PUE_Limit?: number
+    WUE_Limit?: number
+    cooling_power_kw?: number
+    corrected_cop?: number
+    facility_loss_kw?: number
+    predicted_PUE?: number
+    predicted_WUE?: number
+    waste_heat_recovery_kw?: number
+  }
+}
+
 export const useProjectStore = defineStore('project', () => {
   // 项目需求
   const requirement = ref<ProjectRequirement>({
@@ -83,7 +121,7 @@ export const useProjectStore = defineStore('project', () => {
   })
 
   // 制冷方案
-  const coolingPlan = ref({
+  const coolingPlan = ref<CoolingPlan>({
     primary: '间接蒸发冷却',
     secondary: '液冷机柜',
     pue: 1.18
@@ -152,6 +190,13 @@ export const useProjectStore = defineStore('project', () => {
     }
   }
 
+  function updateCoolingPlan(data: any) {
+    coolingPlan.value = { 
+      ...coolingPlan.value, 
+      ...data
+    }
+  }
+
   return {
     requirement,
     agentStatus,
@@ -165,6 +210,7 @@ export const useProjectStore = defineStore('project', () => {
     updateAgentStatus,
     resetAll,
     updateEnvData,
-    updateEnergyPlan
+    updateEnergyPlan,
+    updateCoolingPlan
   }
 })

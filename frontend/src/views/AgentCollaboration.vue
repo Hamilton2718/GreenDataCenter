@@ -277,36 +277,127 @@
 
       <!-- Agent 3: 制冷架构专家 -->
       <div v-if="activeAgent.id === 3" class="cooling-plan">
-        <el-row :gutter="20">
-          <el-col :span="12">
-            <el-card shadow="never">
+        <!-- 方案摘要 -->
+        <el-card shadow="hover" style="margin-bottom: 20px;">
+          <template #header>
+            <span>方案摘要</span>
+          </template>
+          <div v-if="projectStore.coolingPlan.scheme_detail_brief" class="markdown-content">
+            {{ projectStore.coolingPlan.scheme_detail_brief }}
+          </div>
+          <div v-else class="markdown-content">
+            <p>方案摘要生成中...</p>
+          </div>
+        </el-card>
+
+        <!-- 核心指标 -->
+        <el-row :gutter="20" style="margin-bottom: 20px;">
+          <el-col :span="6">
+            <el-card shadow="hover">
               <template #header>
-                <span>制冷技术路线</span>
+                <div class="card-header">
+                  <span>推荐技术</span>
+                </div>
               </template>
-              <el-steps direction="vertical" :active="2">
-                <el-step title="自然冷却" description="利用当地年均8.2℃低温，全年约200天可实现自然冷却" />
-                <el-step title="间接蒸发冷却" description="过渡季节开启，降低压缩机运行时间" />
-                <el-step title="液冷机柜" description="针对30kW高密度机柜，采用冷板式液冷" />
-              </el-steps>
+              <div class="card-content">
+                <div class="card-value">{{ projectStore.coolingPlan.cooling_technology || 'N/A' }}</div>
+              </div>
             </el-card>
           </el-col>
-          <el-col :span="12">
-            <el-card shadow="never">
+          <el-col :span="6">
+            <el-card shadow="hover">
               <template #header>
-                <span>预计能效</span>
+                <div class="card-header">
+                  <span>预计PUE</span>
+                </div>
               </template>
-              <div class="pue-display">
-                <h2>1.18</h2>
-                <p>年均PUE</p>
-                <el-progress type="dashboard" :percentage="85" :width="150" color="#409eff">
-                  <template #default>
-                    <span class="pue-target">目标 1.2</span>
-                  </template>
-                </el-progress>
+              <div class="card-content">
+                <div class="card-value">{{ projectStore.coolingPlan.estimated_pue || 'N/A' }}</div>
+                <div class="card-unit">目标: {{ projectStore.requirement.pueTarget }}</div>
+              </div>
+            </el-card>
+          </el-col>
+          <el-col :span="6">
+            <el-card shadow="hover">
+              <template #header>
+                <div class="card-header">
+                  <span>预计WUE</span>
+                </div>
+              </template>
+              <div class="card-content">
+                <div class="card-value">{{ projectStore.coolingPlan.predicted_wue || 'N/A' }}</div>
+              </div>
+            </el-card>
+          </el-col>
+          <el-col :span="6">
+            <el-card shadow="hover">
+              <template #header>
+                <div class="card-header">
+                  <span>制冷功率</span>
+                </div>
+              </template>
+              <div class="card-content">
+                <div class="card-value">{{ projectStore.coolingPlan.cooling_kpis?.cooling_power_kw || 'N/A' }}</div>
+                <div class="card-unit">kW</div>
               </div>
             </el-card>
           </el-col>
         </el-row>
+
+        <!-- 项目信息 -->
+        <el-card shadow="hover" style="margin-bottom: 20px;">
+          <template #header>
+            <span>项目信息</span>
+          </template>
+          <el-table :data="[projectStore.coolingPlan.cooling_project_info]" style="width: 100%">
+            <el-table-column prop="location" label="位置" />
+            <el-table-column prop="it_load_kW" label="IT负载(kW)" />
+            <el-table-column prop="cabinet_power_kW" label="机柜功率(kW)" />
+            <el-table-column prop="target_pue" label="目标PUE" />
+            <el-table-column prop="green_energy_target" label="绿电目标(%)" />
+          </el-table>
+        </el-card>
+
+        <!-- 计算参数 -->
+        <el-card shadow="hover" style="margin-bottom: 20px;">
+          <template #header>
+            <span>计算参数</span>
+          </template>
+          <el-table :data="[projectStore.coolingPlan.cooling_calc_params]" style="width: 100%">
+            <el-table-column prop="PUE_Limit" label="PUE限值" />
+            <el-table-column prop="WUE_Limit" label="WUE限值" />
+            <el-table-column prop="cooling_eff_coeff" label="制冷效率系数" />
+            <el-table-column prop="facility_loss_coeff" label="设施损耗系数" />
+            <el-table-column prop="regional_cooling_preference" label="区域制冷偏好" />
+          </el-table>
+        </el-card>
+
+        <!-- KPI数据 -->
+        <el-card shadow="hover" style="margin-bottom: 20px;">
+          <template #header>
+            <span>KPI数据</span>
+          </template>
+          <el-table :data="[projectStore.coolingPlan.cooling_kpis]" style="width: 100%">
+            <el-table-column prop="predicted_PUE" label="预测PUE" />
+            <el-table-column prop="predicted_WUE" label="预测WUE" />
+            <el-table-column prop="cooling_power_kw" label="制冷功率(kW)" />
+            <el-table-column prop="corrected_cop" label="修正COP" />
+            <el-table-column prop="waste_heat_recovery_kw" label="余热回收功率(kW)" />
+          </el-table>
+        </el-card>
+
+        <!-- 余热回收策略 -->
+        <el-card shadow="hover" style="margin-bottom: 20px;">
+          <template #header>
+            <span>余热回收策略</span>
+          </template>
+          <div v-if="projectStore.coolingPlan.waste_heat_recovery_strategy" class="markdown-content">
+            {{ projectStore.coolingPlan.waste_heat_recovery_strategy }}
+          </div>
+          <div v-else class="markdown-content">
+            <p>余热回收策略生成中...</p>
+          </div>
+        </el-card>
       </div>
 
       <div class="agent-actions" v-if="activeAgent">
@@ -539,8 +630,67 @@ const regenerateReport = () => {
 }
 
 // 显示Agent详情
-const showAgentDetail = (id: number) => {
+const showAgentDetail = async (id: number) => {
   activeAgent.value = agents.value.find(a => a.id === id)
+  
+  if (id === 2) {
+    // 加载能源规划数据
+    await fetchEnergyPlan()
+  } else if (id === 3) {
+    // 加载制冷方案数据
+    await fetchCoolingPlan()
+  }
+}
+
+// 获取制冷方案数据
+const fetchCoolingPlan = async () => {
+  try {
+    // 构建后端期望的参数结构
+    const requestData = {
+      user_requirements: {
+        location: projectStore.requirement.location,
+        business_type: projectStore.requirement.businessType,
+        planned_area: projectStore.requirement.area,
+        planned_load: projectStore.requirement.load * 1000, // 转换为kW
+        computing_power_density: projectStore.requirement.density,
+        priority: projectStore.requirement.priority[0],
+        green_energy_target: projectStore.requirement.greenTarget,
+        pue_target: projectStore.requirement.pueTarget,
+        budget_constraint: projectStore.requirement.budget
+      },
+      environmental_data: {
+        annual_temperature: projectStore.envData.climate.avgTemp,
+        annual_wind_speed: projectStore.envData.climate.windSpeed,
+        annual_sunshine_hours: projectStore.envData.climate.solarRadiation,
+        carbon_emission_factor: projectStore.envData.carbonFactor,
+        raw_water_usage: 12000.0 // 默认值
+      },
+      electricity_price: {
+        peak_price: projectStore.envData.electricity.peakPrice,
+        high_price: projectStore.envData.electricity.highPrice,
+        flat_price: projectStore.envData.electricity.flatPrice,
+        low_price: projectStore.envData.electricity.valleyPrice,
+        deep_low_price: projectStore.envData.electricity.deepValleyPrice,
+        max_price_diff: projectStore.envData.electricity.maxPriceDiff
+      }
+    }
+
+    const response = await fetch('http://localhost:5001/api/agent3/cooling-plan', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(requestData)
+    })
+    
+    const data = await response.json()
+    if (data.success) {
+      projectStore.updateCoolingPlan(data.data)
+      projectStore.updateAgentStatus('agent3', true)
+    }
+  } catch (error) {
+    console.error('获取制冷方案失败:', error)
+  }
 }
 
 // 渲染Markdown为HTML
