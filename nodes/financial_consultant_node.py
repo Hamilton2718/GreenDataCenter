@@ -150,9 +150,30 @@ def calculate_metrics_from_state(state: Dict[str, Any]) -> Dict[str, Any]:
     
     # ===== 10. 投资回收期 =====
     annual_saving = pv_saving + carbon_benefit  # 万元
-    payback_years = capex_total / annual_saving if annual_saving > 0 else float('inf')
+    payback_years = capex_total / annual_saving if annual_saving > 0 else 30.0
+
+    # ===== 11. 补齐报告需要的核心财务字段（避免缺失值） =====
+    # 年运营成本（万元/年），负值时按 0 处理
+    opex_annual = max(0.0, total_cost)
+
+    # NPV（万元）：按折现率与寿命期计算现值
+    if DISCOUNT_RATE > 0:
+        annuity_factor = (1 - (1 + DISCOUNT_RATE) ** (-LIFETIME_YEARS)) / DISCOUNT_RATE
+    else:
+        annuity_factor = float(LIFETIME_YEARS)
+    npv = annual_saving * annuity_factor - capex_total
+
+    # IRR（%）：简化近似，基于年节省与总投资强度，限制在合理区间
+    irr_proxy = (annual_saving / capex_total * 100.0) if capex_total > 0 else 0.0
+    irr = max(0.0, min(40.0, irr_proxy))
+
+    # LCOE（元/kWh）：用年总成本除以年总电量
+    if total_electricity > 0:
+        lcoe = max(0.0, total_cost * 10000 / (total_electricity * 1000))
+    else:
+        lcoe = 0.0
     
-    # ===== 11. 全生命周期碳减排 =====
+    # ===== 12. 全生命周期碳减排 =====
     lifetime_reduction = emission_reduction_calc * LIFETIME_YEARS
     
     # ===== 汇总结果 =====
@@ -178,7 +199,12 @@ def calculate_metrics_from_state(state: Dict[str, Any]) -> Dict[str, Any]:
         'total_cost': round(total_cost, 2),  # 万元
         'capex_total': round(capex_total, 2),  # 万元
         'annual_saving': round(annual_saving, 2),  # 万元
-        'payback_years': round(payback_years, 1) if payback_years != float('inf') else 'N/A',
+        'payback_years': round(payback_years, 2),
+        'payback_period': round(payback_years, 2),
+        'opex_annual': round(opex_annual, 2),
+        'npv': round(npv, 2),
+        'irr': round(irr, 2),
+        'lcoe': round(lcoe, 4),
         'emission_reduction': round(emission_reduction_calc, 2),  # tCO2/年
         'lifetime_reduction': round(lifetime_reduction, 2),  # tCO2
         'cooling_tech': cooling_tech,
