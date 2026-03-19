@@ -10,58 +10,20 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from langchain_core.prompts import PromptTemplate, ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
 from langchain_core.exceptions import OutputParserException
-from langchain_core.documents import Document
 from langchain_community.chat_models import ChatTongyi
 
-# 导入 RAG builder（使用标准接口）
-from tools.rag_builder import build_or_load_vector_store
-from tools import query_knowledge_base, query_knowledge_base_as_text
+# 导入 RAG builder（使用标准接口，匹配原有架构）
+try:
+    from tools.rag_builder import build_or_load_vector_store
+    has_rag = True
+except ImportError:
+    has_rag = False
 
-
-# ======================== 保留核心映射表 ========================
+# ======================== 核心映射表 ========================
 CITY_TO_PROVINCE = {
     "乌兰察布": "内蒙古", "北京": "北京", "上海": "上海", "广州": "广东",
     "深圳": "广东", "杭州": "浙江", "成都": "四川", "武汉": "湖北",
-    "西安": "陕西", "南京": "江苏"
-}
-
-# 兜底用：省份级制冷基准参数映射
-PROVINCE_COOLING_BASE_PARAMS = {
-    "北京": {"PUE_Limit": 1.35, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
-    "上海": {"PUE_Limit": 1.25, "WUE_Limit": 1.6, "cabinet_power_limit": 15.0},
-    "天津": {"PUE_Limit": 1.25, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
-    "重庆": {"PUE_Limit": 1.25, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
-    "河北": {"PUE_Limit": 1.25, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
-    "山西": {"PUE_Limit": 1.30, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
-    "内蒙古": {"PUE_Limit": 1.15, "WUE_Limit": 1.6, "cabinet_power_limit": 30.0},
-    "辽宁": {"PUE_Limit": 1.30, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
-    "吉林": {"PUE_Limit": 1.25, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
-    "黑龙江": {"PUE_Limit": 1.25, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
-    "江苏": {"PUE_Limit": 1.30, "WUE_Limit": 1.6, "cabinet_power_limit": 15.0},
-    "浙江": {"PUE_Limit": 1.25, "WUE_Limit": 1.6, "cabinet_power_limit": 15.0},
-    "安徽": {"PUE_Limit": 1.25, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
-    "福建": {"PUE_Limit": 1.25, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
-    "江西": {"PUE_Limit": 1.25, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
-    "山东": {"PUE_Limit": 1.30, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
-    "河南": {"PUE_Limit": 1.25, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
-    "湖北": {"PUE_Limit": 1.25, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
-    "湖南": {"PUE_Limit": 1.30, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
-    "广东": {"PUE_Limit": 1.25, "WUE_Limit": 1.6, "cabinet_power_limit": 12.0},
-    "广西": {"PUE_Limit": 1.30, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
-    "海南": {"PUE_Limit": 1.10, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
-    "四川": {"PUE_Limit": 1.15, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
-    "贵州": {"PUE_Limit": 1.15, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
-    "云南": {"PUE_Limit": 1.30, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
-    "西藏": {"PUE_Limit": 1.15, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
-    "陕西": {"PUE_Limit": 1.20, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
-    "甘肃": {"PUE_Limit": 1.20, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
-    "青海": {"PUE_Limit": 1.20, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
-    "宁夏": {"PUE_Limit": 1.15, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
-    "新疆": {"PUE_Limit": 1.20, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
-    "香港": {"PUE_Limit": 1.25, "WUE_Limit": 1.6, "cabinet_power_limit": 15.0},
-    "澳门": {"PUE_Limit": 1.35, "WUE_Limit": 1.6, "cabinet_power_limit": 15.0},
-    "台湾": {"PUE_Limit": 1.25, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
-    "default": {"PUE_Limit": 1.30, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0}
+    "西安": "陕西", "南京": "江苏", "张家口": "河北", "三亚": "海南", "丽江": "云南"
 }
 
 # 温度对制冷能效系数（COP）的修正因子
@@ -69,376 +31,366 @@ TEMP_COP_CORRECTION = {
     "≤0": 1.2, "1-10": 1.1, "11-20": 1.0, "21-30": 0.9, ">30": 0.8
 }
 
+# 北方省份列表（用于余热回收系数的地域修正）
+NORTHERN_PROVINCES = [
+    "内蒙古", "北京", "天津", "河北", "山西", "辽宁", 
+    "吉林", "黑龙江", "陕西", "甘肃", "青海", "宁夏", "新疆"
+]
+
+# 水资源紧缺综合评价指数 CWSI (Water Scarcity Index, 0~1，值越小越缺水)
+CWSI_MAP = {
+    "北京": 0.44, "天津": 0.38, "河北": 0.31, "上海": 0.61, "江苏": 0.54,
+    "浙江": 0.64, "广东": 0.64, "四川": 0.51, "重庆": 0.51, "内蒙古": 0.39,
+    "贵州": 0.46, "甘肃": 0.35, "宁夏": 0.31, "default": 0.50
+}
+
 # ======================== Prompt模板 ========================
 PARAM_EXTRACTION_PROMPT = PromptTemplate(
     template="""
 你是数据中心暖通工程领域的资深专家，需从检索到的行业规范/技术文档中提取制冷规划关键计算参数，严格按JSON格式输出。
-【检索知识库内容】
+【检索知识库内容/兜底规则】
 {retrieved_context}
 【用户基础需求】
 {user_requirements}
-【地域基准参数(作参考)】
-{regional_base_params}
+【动态基准参数(用户输入的当地限值)】
+{dynamic_base_params}
 
 【提取规则】
-1. 必须提取以下参数（优先使用知识库内容，若无明确值则使用地域基准参数或行业默认值）：
+1. 必须提取以下参数（优先使用用户基础需求和动态基准参数）：
    - PUE_Limit: 该地区数据中心PUE强制限值（无单位）
-   - WUE_Limit: 该地区数据中心WUE强制限值（单位：L/kWh，国标红线≤1.6）
-   - cooling_eff_coeff: 制冷系统能效系数（COP，制冷量/耗电量，无单位，风冷一般3-4，液冷一般4-6）
-   - waste_heat_recovery_coeff: 余热回收系数（可回收余热占制冷量比例，无单位，通常0-0.8）
-   - facility_loss_coeff: 基础设施损耗系数（无单位，通常0.05-0.15）
-   - cabinet_power_limit: 该地区高密度机柜功率限值界线（kW/机柜）
-   - regional_cooling_preference: 该地区推荐的制冷技术类型（如"液冷", "风冷", "间接蒸发冷却"）
+   - WUE_Limit: 该地区数据中心WUE强制限值（单位：L/kWh）
+   - cooling_eff_coeff: 制冷系统能效系数（COP）
+   - waste_heat_recovery_coeff: 余热回收系数（0-0.8）
+   - facility_loss_coeff: 基础设施损耗系数（0.05-0.15）
+   - cabinet_power_limit: 高密度机柜功率限值
+   - regional_cooling_preference: 推荐的制冷技术类型
 2. 输出仅保留JSON结构，无任何多余文字、注释或说明
 3. 数值均保留2位小数
-
-【示例输出】
-{{
-    "PUE_Limit": 1.15,
-    "WUE_Limit": 1.60,
-    "cooling_eff_coeff": 4.20,
-    "waste_heat_recovery_coeff": 0.60,
-    "facility_loss_coeff": 0.08,
-    "cabinet_power_limit": 20.00,
-    "regional_cooling_preference": "液冷"
-}}
 """,
-    input_variables=["retrieved_context", "user_requirements", "regional_base_params"]
+    input_variables=["retrieved_context", "user_requirements", "dynamic_base_params"]
 )
 
 COOLING_SCHEME_PROMPT = ChatPromptTemplate.from_template("""
-你是一位顶级的数据中心制冷系统专家，精通各类制冷技术选型与落地。
-请基于检索上下文、用户约束和地域特征，给出精准的制冷方案建议（仅保留核心数据，无冗余描述）。
-**核心约束条件：**
-1. 地域适配性（结合{region}的年均温度{annual_temp}℃、省份制冷规范）；
-2. 算力密度：{cabinet_power} kW/机柜；
-3. PUE目标：{target_pue}；
-4. 绿电协同（消纳目标{green_energy_target}%）；
-5. WUE合规（国标≤1.6 L/kWh）。
+你是一位顶级的数据中心制冷系统架构专家，请基于系统内部进行的多目标寻优计算结果，生成一份极具数理逻辑的制冷方案设计报告。
 
-**检索到的当地规范上下文:**
-{context}
+**【系统内部多目标寻优计算结果 (Optimization Trace)】**
+{optimization_trace}
 
-**回答要求（必须按以下要点简洁输出，控制在200字内）：**
-- 主选技术路线（精确到制冷末端和冷源设备）
-- 备选技术路线
-- 选型理由（结合气候、算力密度和绿电消纳能力）
-- 绿电与冷库/储能的协同建议
+**【核心物理与环境约束条件】**
+1. 地域与气候：{province}{region}（年均温 {annual_temp}℃，水资源紧缺指数CWSI={cwsi}）
+2. 当地政策红线：PUE限值 {pue_limit}，WUE限值 {wue_limit} L/kWh
+3. 算力与密度：单机柜算力密度 {cabinet_power} kW/机柜，类型界定限值 {cabinet_power_limit} kW/机柜
+4. 用户目标偏好：优先级策略为【{priority}】（PUE目标: {target_pue}，绿电消纳目标: {green_energy_target}%）
+5. 上游绿电规划建议：{green_energy_plan_text}
+
+**【强制回答要求】**
+请严格遵循以下排版与语法规范生成报告：
+1. **绝对禁止使用完整的 LaTeX 文档结构**（如 `\\documentclass`、`\\begin{{document}}`、`\\section`、`\\subsection`、`\\begin{{itemize}}`、`\\begin{{tabular}}` 等排版指令）。
+2. **必须使用标准 Markdown 语法**进行排版（如使用 `#` 和 `##` 表示标题，`-` 或 `*` 表示列表，`|---|` 表示表格，`**` 表示加粗）。
+3. **数学公式规范**：仅在表达复杂数学公式或变量时使用 LaTeX 语法，且必须使用单美元符号 `$公式$`（行内）或双美元符号 `$$公式$$`（行间）包裹。不要在普通文字文本中使用 LaTeX 语法排版。
+4. 报告必须包含以下四个核心章节：
+   - **制冷策略寻优逻辑解析**：显式列出行间目标函数公式 $$\\min F_{{strategy}} = \\alpha \\cdot f(PUE) + \\beta \\cdot f(WUE) + \\gamma \\cdot f(TCO) + \\delta \\cdot f(CUE) - \\varepsilon \\cdot f(WHR)$$，并解释系统是如何根据用户的优先级（经济/环保）和当地水资源（CWSI）动态调整各项权重的（结合 Trace 中的权重数据）。
+   - **多方案打分对比**：以标准 Markdown 表格（`|---|`）形式简述备选方案的得分情况，说明为何最终胜出的方案（得分最低者）是该环境下的最优解。
+   - **最优架构落地指南**：针对胜出方案（主选路线），给出具体的末端（风冷/液冷）与冷源（冷却塔/干冷器）配置建议，必须体现算力密度引发的散热物理边界。
+   - **源网荷储与余热协同**：必须结合上游传入的绿电规划建议（光伏/PPA/绿证配置策略）与本系统的冷却选型及余热回收潜力，给出绿电消纳与余热利用的闭环联动协同策略。
 """)
 
 # ======================== 核心类 ========================
 class CoolingAgent3:
-    """
-    Agent 3: 数据中心暖通与制冷架构专家
-    根据 Agent 1、2 的输出和 RAG 知识库，计算 PUE/WUE，推荐制冷架构
-    """
     def __init__(self):
-        # 不再维护 RAG，直接使用标准接口查询
-        pass
-        
-        # 初始化 LLM（尝试）
-        try:
-            self.llm = ChatTongyi(
-            model="qwen-plus", 
-            temperature=0.1,
-            dashscope_api_key="sk-77a4c286b27e4c06aff03cccc38cc9d1"  # 正确传入 API Key
-    )
-        except Exception as e:
-            print(f"⚠️ LLM 初始化失败: {e}，将使用兜底参数")
-            self.llm = None
-
-    def retrieve_context(self, region: str, province: str, annual_temp: float, cabinet_power: float) -> str:
-        """从知识库检索相关信息并构建上下文（使用标准接口）"""
-        try:
-            # 直接返回兜底文本，避免RAG检索超时
-            print("⚠️ 跳过RAG检索，直接使用本地兜底规则构建上下文...")
-            regional_params = PROVINCE_COOLING_BASE_PARAMS.get(province, PROVINCE_COOLING_BASE_PARAMS["default"])
-            fallback_text = f"{province}地区数据中心强制要求PUE限值≤{regional_params['PUE_Limit']}，WUE限值≤{regional_params['WUE_Limit']} L/kWh。针对{cabinet_power}kW/机柜的算力（限值{regional_params['cabinet_power_limit']}），超限建议采用液冷技术，未超限建议风冷结合自然冷却。年均温{annual_temp}℃下，需注重节水与干冷。"
-            return fallback_text
-        except Exception as e:
-            print(f"⚠️ 构建上下文失败: {e}，启用本地兜底规则")
-            regional_params = PROVINCE_COOLING_BASE_PARAMS.get(province, PROVINCE_COOLING_BASE_PARAMS["default"])
-            fallback_text = f"{province}地区数据中心强制要求PUE限值≤{regional_params['PUE_Limit']}，WUE限值≤{regional_params['WUE_Limit']} L/kWh。针对{cabinet_power}kW/机柜的算力（限值{regional_params['cabinet_power_limit']}），超限建议采用液冷技术，未超限建议风冷结合自然冷却。年均温{annual_temp}℃下，需注重节水与干冷。"
-            return fallback_text
+        self.vector_store = None
+        self.retriever = None
+        # if has_rag:
+        #     try:
+        #         self.vector_store = build_or_load_vector_store()
+        #         if self.vector_store:
+        #             self.retriever = self.vector_store.as_retriever(search_kwargs={"k": 3})
+        #     except Exception:
+        #         pass
+        self.llm = ChatTongyi(model="qwen-max", temperature=0.2)
 
     def get_cop_correction_factor(self, annual_temp: float) -> float:
-        """根据年均温度获取COP修正系数"""
         if annual_temp <= 0: return TEMP_COP_CORRECTION["≤0"]
         elif 1 <= annual_temp <= 10: return TEMP_COP_CORRECTION["1-10"]
         elif 11 <= annual_temp <= 20: return TEMP_COP_CORRECTION["11-20"]
         elif 21 <= annual_temp <= 30: return TEMP_COP_CORRECTION["21-30"]
         else: return TEMP_COP_CORRECTION[">30"]
 
-    def extract_cooling_params(self, context: str, user_reqs: Dict[str, Any], province: str) -> Dict[str, float]:
-        """用 LLM 从知识库上下文中提取制冷计算核心指标"""
-        regional_params = PROVINCE_COOLING_BASE_PARAMS.get(province, PROVINCE_COOLING_BASE_PARAMS["default"])
+    # def retrieve_context(self, region: str, province: str, annual_temp: float, cabinet_power: float, cabinet_power_limit: float, pue_limit: float, wue_limit: float) -> str:
+    #     queries = [
+    #         f"{province} 数据中心 余热回收 政策",
+    #         f"数据中心 单机柜功率 {cabinet_power}kW 制冷策略 液冷 风冷"
+    #     ]
+    #     docs_content = []
+    #     if self.retriever:
+    #         try:
+    #             for q in queries:
+    #                 docs = self.retriever.invoke(q)
+    #                 for d in docs:
+    #                     if d.page_content not in docs_content:
+    #                         docs_content.append(d.page_content)
+    #         except Exception:
+    #             pass
         
+    #     if not docs_content:
+    #         if cabinet_power <= 20:
+    #             strategy_desc = "风冷仍是主流。建议采用高效风冷技术结合冷热通道隔离。"
+    #         elif 20 < cabinet_power <= 60:
+    #             strategy_desc = "液冷技术成为必然选择。建议采用冷板式液冷，这种风液混合部署方案商用化程度最高。"
+    #         else:
+    #             strategy_desc = "建议直接采用浸没式液冷（单相或相变浸没），理论上彻底解决局部热点问题。"
+                
+    #         docs_content.append(
+    #             f"【合规基准】强制要求PUE限值≤{pue_limit}，WUE限值≤{wue_limit} L/kWh。\n"
+    #             f"【权威策略兜底】根据行业制冷演进路径，{strategy_desc}\n"
+    #         )
+
+    #     return "\n".join(docs_content)
+    
+    def retrieve_context(self, region: str, province: str, annual_temp: float, cabinet_power: float, cabinet_power_limit: float, pue_limit: float, wue_limit: float) -> str:
+        queries = [
+            f"{province} 数据中心 余热回收 政策",
+            f"数据中心 单机柜功率 {cabinet_power}kW 制冷策略 液冷 风冷"
+        ]
+        docs_content = []
+        # if self.retriever:
+        #     try:
+        #         for q in queries:
+        #             docs = self.retriever.invoke(q)
+        #             for d in docs:
+        #                 if d.page_content not in docs_content:
+        #                     docs_content.append(d.page_content)
+        #     except Exception:
+        #         pass
+        if cabinet_power <= 20:
+            strategy_desc = "风冷仍是主流。建议采用高效风冷技术结合冷热通道隔离。"
+        elif 20 < cabinet_power <= 60:
+            strategy_desc = "液冷技术成为必然选择。建议采用冷板式液冷，这种风液混合部署方案商用化程度最高。"
+        else:
+            strategy_desc = "建议直接采用浸没式液冷（单相或相变浸没），理论上彻底解决局部热点问题。"
+            
+        docs_content.append(
+            f"【合规基准】强制要求PUE限值≤{pue_limit}，WUE限值≤{wue_limit} L/kWh。\n"
+            f"【权威策略兜底】根据行业制冷演进路径，{strategy_desc}\n"
+        )
+
+        return "\n".join(docs_content)
+
+    def _calculate_recovery_coeff(self, user_reqs: Dict[str, Any], province: str) -> float:
+        cab_power = user_reqs.get('computing_power_density', 8)
+        cab_power_limit = user_reqs.get("cabinet_power_limit", 20.0)
+        green_energy_target = user_reqs.get("green_energy_target", 90)
+        is_liquid_cooling = cab_power > 20 or cab_power >= cab_power_limit
+
+        base_coeff = 0.75 if is_liquid_cooling else 0.55
+        region_correction = 0.1 if province in NORTHERN_PROVINCES else 0.0
+        green_correction = 0.05 if green_energy_target >= 90 else -0.05
+        density_correction = 0.05 if cab_power > 60 else (-0.05 if cab_power <= 20 else 0.0)
+
+        return round(min(0.8, max(0.0, base_coeff + region_correction + green_correction + density_correction)), 2)
+
+    def evaluate_cooling_strategies(self, project_info: Dict[str, Any], province: str) -> Dict[str, Any]:
+        cabinet_power = project_info.get("computing_power_density", 8.0)
+        priority = project_info.get("priority", "环保型")
+        cwsi = CWSI_MAP.get(province, CWSI_MAP["default"])
+
+        alpha, beta, gamma, delta, epsilon = 0.3, 0.2, 0.3, 0.1, 0.1
+        
+        if cwsi <= 0.45: beta += 0.3
+        elif cwsi >= 0.6: beta -= 0.1
+
+        if priority == "环保型":
+            delta += 0.2; epsilon += 0.1; gamma -= 0.1
+        elif priority == "经济型":
+            gamma += 0.3; delta -= 0.1
+
+        total_weight = alpha + beta + gamma + delta + epsilon
+        w = {
+            "alpha": round(alpha/total_weight, 2), "beta": round(beta/total_weight, 2), 
+            "gamma": round(gamma/total_weight, 2), "delta": round(delta/total_weight, 2), 
+            "epsilon": round(epsilon/total_weight, 2)
+        }
+
+        strategies = [
+            {"name": "纯风冷+间接蒸发冷却 (Air Cooling + IEC)", "max_kw": 15, "f_pue": 1.25, "f_wue": 1.0, "f_tco": 0.8, "f_cue": 1.2, "f_whr": 0.4},
+            {"name": "风液混合+开式冷却塔 (Hybrid + Cooling Tower)", "max_kw": 60, "f_pue": 1.15, "f_wue": 2.1, "f_tco": 1.0, "f_cue": 1.1, "f_whr": 0.75},
+            {"name": "风液混合+混合型干冷器 (Hybrid + Dry Cooler)", "max_kw": 60, "f_pue": 1.20, "f_wue": 0.5, "f_tco": 1.3, "f_cue": 1.15, "f_whr": 0.75},
+            {"name": "单相浸没式液冷+干冷器 (Immersion + Dry Cooler)", "max_kw": 999, "f_pue": 1.08, "f_wue": 0.1, "f_tco": 1.9, "f_cue": 1.05, "f_whr": 0.85}
+        ]
+
+        best_strategy = None
+        min_score = float('inf')
+        trace_log = f"【寻优环境】算力密度={cabinet_power}kW, 偏好={priority}, 水资源CWSI={cwsi}\n"
+        trace_log += f"【动态权重】α(PUE)={w['alpha']}, β(WUE)={w['beta']}, γ(TCO)={w['gamma']}, δ(CUE)={w['delta']}, ε(WHR)={w['epsilon']}\n"
+        trace_log += "【方案打分】计算公式: F = α·f(PUE) + β·f(WUE) + γ·f(TCO) + δ·f(CUE) - ε·f(WHR)\n"
+
+        for s in strategies:
+            if cabinet_power > s["max_kw"]:
+                trace_log += f" - 方案 [{s['name']}] 被一票否决：无法满足 {cabinet_power}kW 物理散热极限。\n"
+                continue
+            score = (w["alpha"] * s["f_pue"] + w["beta"] * s["f_wue"] + w["gamma"] * s["f_tco"] + w["delta"] * s["f_cue"] - w["epsilon"] * s["f_whr"])
+            trace_log += f" - 方案 [{s['name']}] 得分: {score:.3f} (PUE代价:{s['f_pue']}, WUE代价:{s['f_wue']}, TCO代价:{s['f_tco']})\n"
+            if score < min_score:
+                min_score = score
+                best_strategy = s
+
+        trace_log += f"★ 【最终决策】代价最小路线为：[{best_strategy['name']}]，最终得分：{min_score:.3f}\n"
+
+        return {"best_strategy_name": best_strategy["name"], "optimization_trace": trace_log}
+
+    def extract_cooling_params(self, context: str, user_reqs: Dict[str, Any], best_strategy_name: str) -> Dict[str, float]:
+        cab_power_limit = user_reqs.get("cabinet_power_limit", 20.0)
+        pue_limit_input = user_reqs.get("pue_limit", 1.30)
+        wue_limit_input = user_reqs.get("wue_limit", 1.60)
+        dynamic_params = {"PUE_Limit": pue_limit_input, "WUE_Limit": wue_limit_input}
+        
+        agent_recovery_coeff = self._calculate_recovery_coeff(user_reqs, user_reqs.get("location", "默认"))
+        is_liquid = "液冷" in best_strategy_name
+
         if self.llm:
-            print("🧠 正在调用 LLM 解析制冷核心指标(PUE/WUE/COP)...")
             prompt = PARAM_EXTRACTION_PROMPT.format(
                 retrieved_context=context,
                 user_requirements=json.dumps(user_reqs, ensure_ascii=False),
-                regional_base_params=json.dumps(regional_params, ensure_ascii=False)
+                dynamic_base_params=json.dumps(dynamic_params, ensure_ascii=False)
             )
             try:
                 parser = JsonOutputParser()
                 response = self.llm.invoke(prompt)
                 params = parser.parse(response.content)
-                print(f"✅ 从 RAG+LLM 提取制冷参数成功: {params}")
+                llm_recovery_coeff = params.get("waste_heat_recovery_coeff", agent_recovery_coeff)
+                params["waste_heat_recovery_coeff"] = round((agent_recovery_coeff + llm_recovery_coeff) / 2, 2)
+                params["cabinet_power_limit"] = cab_power_limit
+                params["regional_cooling_preference"] = best_strategy_name
                 return params
-            except Exception as e:
-                print(f"⚠️ LLM 解析制冷参数失败: {e}，回退至兜底参数...")
+            except Exception:
+                pass
 
-        # 如果没有LLM或解析失败，使用兜底参数
-        cab_power = user_reqs.get('算力_density', 8)
-        cab_limit = regional_params.get("cabinet_power_limit", 20.00)
         return {
-            "PUE_Limit": regional_params.get("PUE_Limit", 1.15),
-            "WUE_Limit": regional_params.get("WUE_Limit", 1.60),
-            "cooling_eff_coeff": 4.5 if cab_power >= cab_limit else 3.8,
-            "waste_heat_recovery_coeff": 0.60,
-            "facility_loss_coeff": 0.07,
-            "cabinet_power_limit": cab_limit,
-            "regional_cooling_preference": "液冷" if cab_power >= cab_limit else "风冷"
+            "PUE_Limit": pue_limit_input, "WUE_Limit": wue_limit_input,
+            "cooling_eff_coeff": 4.5 if is_liquid else 3.8, "waste_heat_recovery_coeff": agent_recovery_coeff,
+            "facility_loss_coeff": 0.07, "cabinet_power_limit": cab_power_limit,
+            "regional_cooling_preference": best_strategy_name
         }
 
     def calculate_cooling_kpis(self, params: Dict[str, Any], project_info: Dict[str, Any], env_data: Dict[str, Any]) -> Dict[str, Any]:
-        """严格根据公式推算 PUE 和 WUE"""
         it_load = project_info.get("planned_load", 0)
-        cabinet_power = project_info.get("算力_density", 0)
+        cabinet_power = project_info.get("computing_power_density", 0)
         annual_temp = env_data.get("annual_temperature", 15.0)
-        raw_water_usage_lh = env_data.get("raw_water_usage", 6000.0) # 如果环境数据中有小时耗水量，则使用
+        raw_water_usage_lh = env_data.get("raw_water_usage", 6000.0)
 
-        # 密度校正和温度校正
         density_correction = 1.1 if cabinet_power >= params.get("cabinet_power_limit", 20.0) else 1.0
         cop_correction = self.get_cop_correction_factor(annual_temp)
         corrected_cop = params.get("cooling_eff_coeff", 4.0) * cop_correction
 
-        # 1. 制冷系统原始负载需求
         cooling_load_kw = it_load * 1.1 * density_correction
-        
-        # 2. 余热回收能力（抵消一部分制冷能耗）
         waste_heat_recovery_kw = cooling_load_kw * params.get("waste_heat_recovery_coeff", 0.0)
         corrected_cooling_load = max(0.0, cooling_load_kw - waste_heat_recovery_kw)
         
-        # 3. 实际制冷功率 = 需要排走的热量 / COP
         cooling_power_kw = corrected_cooling_load / corrected_cop if corrected_cop > 0 else 0.0
-        
-        # 4. 其他基础设施损耗
         facility_loss_kw = it_load * params.get("facility_loss_coeff", 0.1)
 
-        # 5. PUE计算 = (IT负载 + 制冷能耗 + 其他设施能耗) / IT负载
         total_energy = it_load + cooling_power_kw + facility_loss_kw
         pue = total_energy / it_load if it_load > 0 else 1.0
-        
-        # 6. WUE计算 = 总耗水量(L/h) / IT负载(kW)
         wue = raw_water_usage_lh / it_load if it_load > 0 else 0.0
 
         return {
-            "predicted_PUE": round(pue, 3),
-            "predicted_WUE": round(wue, 3),
+            "predicted_PUE": round(pue, 3), "predicted_WUE": round(wue, 3),
             "waste_heat_recovery_kw": round(waste_heat_recovery_kw, 2),
             "cooling_power_kw": round(cooling_power_kw, 2),
-            "facility_loss_kw": round(facility_loss_kw, 2),
-            "PUE_Limit": params.get("PUE_Limit"),
-            "WUE_Limit": params.get("WUE_Limit"),
-            "corrected_cop": round(corrected_cop, 2)
+            "facility_loss_kw": round(facility_loss_kw, 2), "corrected_cop": round(corrected_cop, 2)
         }
 
-    def generate_cooling_scheme(self, context: str, project_info: Dict[str, Any], env_data: Dict[str, Any], province: str) -> str:
-        """根据前置提取的信息，调用 LLM 生成描述性制冷建议"""
-        
-        print("💡 正在调用 LLM 生成最终的制冷方案策略...")
+    def generate_cooling_scheme(self, context: str, project_info: Dict[str, Any], env_data: Dict[str, Any], province: str, opt_result: Dict[str, Any], green_energy_plan: str) -> str:
         prompt_val = COOLING_SCHEME_PROMPT.format(
-            region=project_info.get("location", "默认地区"),
+            optimization_trace=opt_result["optimization_trace"],
+            region=project_info.get("location", "默认"),
+            province=province,
+            cwsi=CWSI_MAP.get(province, CWSI_MAP["default"]),
             annual_temp=env_data.get("annual_temperature", 15.0),
-            cabinet_power=project_info.get("算力_density", 8),
+            cabinet_power=project_info.get("computing_power_density", 8),
+            cabinet_power_limit=project_info.get("cabinet_power_limit", 20.0),
+            pue_limit=project_info.get("pue_limit", 1.30),
+            wue_limit=project_info.get("wue_limit", 1.60),
             target_pue=project_info.get("pue_target", 1.2),
             green_energy_target=project_info.get("green_energy_target", 90),
-            context=context
+            priority=project_info.get("priority", "环保型"),
+            green_energy_plan_text=green_energy_plan
         )
         try:
-            response = self.llm.invoke(prompt_val)
-            return response.content.strip()
+            return self.llm.invoke(prompt_val).content.strip()
         except Exception as e:
-            print(f"❌ 生成详细制冷建议失败: {e}")
-            return "制冷方案生成失败，请结合基础KPI数据进行手工评估。"
+            return f"报告生成失败: {e}"
 
-    def process(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """主执行链路（适配 LangGraph 状态格式）"""
-        # 兼容 Agent 1 的输出格式：user_requirements 包含 project_info 的所有字段
-        user_reqs = state.get("user_requirements", {})
-        env_data = state.get("environmental_data", {})
-            
-        # 构建 project_info（兼容旧版和新版字段名）
-        project_info = {
-            "location": user_reqs.get("location", user_reqs.get("project_info", {}).get("location", "北京")),
-            "business_type": user_reqs.get("business_type", "通用"),
-            "planned_area": user_reqs.get("planned_area", 10000),
-            "planned_load": user_reqs.get("planned_load", 5000),
-            "computing_power_density": user_reqs.get("computing_power_density", user_reqs.get("Computing_power_density", user_reqs.get("算力_density", 8))),
-            "priority": user_reqs.get("priority", "环保型"),
-            "green_energy_target": user_reqs.get("green_energy_target", 90),
-            "pue_target": user_reqs.get("pue_target", 1.2),
-            "budget_constraint": user_reqs.get("budget_constraint", 10000)
-        }
-            
-        region = project_info.get("location", "北京")
-        province = CITY_TO_PROVINCE.get(region, "北京")
-        annual_temp = env_data.get("annual_temperature", 15.0)
-        cabinet_power = project_info.get("算力_density", 8.0)
-    
-        # 1. RAG 知识检索
-        context = self.retrieve_context(region, province, annual_temp, cabinet_power)
-    
-        # 2. 从上下文中提取核心计算参数
-        extracted_params = self.extract_cooling_params(context, project_info, province)
-    
-        # 3. 计算物理 KPI（PUE/WUE）
-        kpis = self.calculate_cooling_kpis(extracted_params, project_info, env_data)
-    
-        # 4. 生成报告文本
-        scheme_text = self.generate_cooling_scheme(context, project_info, env_data, province)
-    
-        # 5. 组合标准化数据包输出（符合 graph.py 的 CoolingPlan 类型定义）
-        cooling_plan = {
-            # LLM 生成的详细方案
-            "scheme_detail_brief": scheme_text,
-                
-            # 制冷系统核心参数
-            "cooling_technology": extracted_params.get("regional_cooling_preference", "风冷"),
-            "estimated_pue": kpis.get("predicted_PUE", 1.3),
-            "predicted_wue": kpis.get("predicted_WUE", 1.6),
-                
-            # 详细计算参数（供后续 Agent 使用）
-            "cooling_project_info": {
-                "location": region,
-                "province": province,
-                "it_load_kW": project_info.get("planned_load"),
-                "cabinet_power_kW": cabinet_power,
-                "target_pue": project_info.get("pue_target"),
-                "green_energy_target": project_info.get("green_energy_target")
-            },
-            "cooling_calc_params": extracted_params,
-            "cooling_kpis": kpis
-        }
-            
-        # 更新 state（LangGraph 标准格式）
-        return {
-            **state,
-            "cooling_plan": cooling_plan
-        }
-
-
-# ======================== LangGraph 节点函数 ========================
-
+# ======================== 节点暴露函数 ========================
 def cooling_specialist_node(state: dict) -> dict:
     """
     Agent 3: 暖通与制冷架构专家 - LangGraph Node
-    
-    基于地理位置、算力密度和 PUE 目标，结合 RAG 知识库选择最优制冷技术方案。
-    
-    参数:
-        state: GreenDataCenterState 类型，包含:
-            - user_requirements: 用户需求
-            - environmental_data: 环境数据
-            - energy_plan: 能源规划方案（可选）
-            
-    返回:
-        更新后的 state，新增:
-            - cooling_plan: 制冷方案
     """
     print("\n" + "="*60)
     print("❄️  [Agent 3: 暖通与制冷架构专家] 开始工作")
     print("="*60)
     
-    # 获取输入数据
+    # 提取 Graph State 参数
     user_reqs = state.get("user_requirements", {})
     env_data = state.get("environmental_data", {})
+    energy_plan = state.get("energy_plan", {})
     
-    location = user_reqs.get("location", "未知")
-    computing_density = user_reqs.get("computing_power_density", 
-                                     user_reqs.get("Computing_power_density", 8))
-    pue_target = user_reqs.get("pue_target", 1.2)
-    planned_load = user_reqs.get("planned_load", 0)
-    annual_temp = env_data.get("annual_temperature", 15)
-    
-    print(f"📊 输入参数:")
-    print(f"  - 位置：{location}")
-    print(f"  - 算力密度：{computing_density} kW/机柜")
-    print(f"  - PUE 目标：{pue_target}")
-    print(f"  - 计划负荷：{planned_load} kW")
-    print(f"  - 年均温度：{annual_temp}°C")
-    
-    # 创建制冷 Agent 并执行
-    cooling_agent = CoolingAgent3()
-    result_state = cooling_agent.process(state)
-    
-    # 打印结果
-    cooling_plan = result_state.get("cooling_plan", {})
-    print(f"\n❄️  制冷方案:")
-    print(f"  - 推荐技术：{cooling_plan.get('cooling_technology', 'N/A')}")
-    print(f"  - 预计 PUE: {cooling_plan.get('estimated_pue', 'N/A')}")
-    print(f"  - 预计 WUE: {cooling_plan.get('predicted_wue', 'N/A')}")
-    
-    scheme_brief = cooling_plan.get("scheme_detail_brief", "")
-    if scheme_brief:
-        print(f"\n📝 方案摘要:")
-        print(scheme_brief[:300] + ("..." if len(scheme_brief) > 300 else ""))
-    
-    print("\n" + "="*60)
-    print("✅ [Agent 3: 暖通与制冷架构专家] 工作完成")
-    print("="*60)
-    
-    return result_state
+    # 解析来自 Agent 2 的绿电建议字符串
+    if energy_plan:
+        green_plan_text = (
+            f"目标占比 {energy_plan.get('estimated_green_ratio', user_reqs.get('green_energy_target', 90))}%, "
+            f"建议配置 {energy_plan.get('pv_capacity', 0)}kW 光伏，"
+            f"长协/绿证解决 {energy_plan.get('ppa_ratio', 0)}%。"
+        )
+    else:
+        green_plan_text = "无特定绿电规划，按常规比例消纳。"
 
-
-# ======================== 独立测试入口 ========================
-if __name__ == "__main__":
-    print("===== 开始测试 Agent 3: 数据中心暖通与制冷架构专家 =====")
-    
-    # 初始化制冷 Agent
-    cooling_agent = CoolingAgent3()
-
-    # 模拟上游 Agent (Agent 1 & Agent 2) 传入的 SystemState 数据
-    upstream_input = {
-        "project_info": {
-            "location": "杭州",
-            "business_type": "通用",
-            "planned_area": 10000,
-            "planned_load": 5000,
-            "算力_density": 8,
-            "priority": "环保型",
-            "green_energy_target": 90,
-            "pue_target": 1.2,
-            "budget_constraint": 10000,
-            "timestamp": "2026-03-10"
-        },
-        "environmental_data": {
-            "annual_temperature": 17.59,
-            "annual_wind_speed": 2.21,
-            "annual_sunshine_hours": 3305.89,
-            "carbon_emission_factor": 0.4974,
-            "raw_water_usage": 6000.0  # 假设的实时耗水量，单位 L/h，适配 5000kW
-        },
-        "electricity_price": {
-            "尖峰电价": 0.9287, "高峰电价": 0.9287, "平段电价": 0.5629,
-            "低谷电价": 0.2533, "深谷电价": 0.2533, "最大峰谷价差": 0.6754
-        },
-        "renewable_potential": {
-            "renewable_ratio": 0.9,
-            "renewable_surplus": True,
-            "renewable_available_hours": 1800
-        }
+    # 从上游抓取核心设定（补齐可能缺失的默认参数）
+    project_info = {
+        **user_reqs,
+        "cabinet_power_limit": user_reqs.get("cabinet_power_limit", 20.0),
+        "pue_limit": user_reqs.get("pue_limit", 1.30),
+        "wue_limit": user_reqs.get("wue_limit", 1.60),
     }
 
-    # 执行主流程
-    print("\n--- 接收上游传入的核心参数 ---")
-    print(f"项目位置: {upstream_input['project_info']['location']}")
-    print(f"规划负载: {upstream_input['project_info']['planned_load']}kW")
-    print(f"算力密度: {upstream_input['project_info']['算力_density']}kW/机柜")
-    print(f"年均温度: {upstream_input['environmental_data']['annual_temperature']}℃")
-    print(f"PUE目标: {upstream_input['project_info']['pue_target']}")
+    region = project_info.get("location", "北京")
+    province = CITY_TO_PROVINCE.get(region, "北京")
+    annual_temp = env_data.get("annual_temperature", 15.0)
+    cabinet_power = project_info.get("computing_power_density", 8.0)
 
-    print("\n--- 数据包已转交给 Agent 4 ---")
-    print("虚拟运行仿真专家 Agent 4 可以直接读取 'cooling_plan' 进入验证阶段")
+    # 初始化 Agent 并执行各步骤
+    agent = CoolingAgent3()
+    
+    # 1. 寻优评价
+    opt_result = agent.evaluate_cooling_strategies(project_info, province)
+    
+    # 2. 检索并提取
+    context = agent.retrieve_context(region, province, annual_temp, cabinet_power, project_info["cabinet_power_limit"], project_info["pue_limit"], project_info["wue_limit"])
+    extracted_params = agent.extract_cooling_params(context, project_info, opt_result["best_strategy_name"])
+    
+    # 3. 计算物理 KPI
+    kpis = agent.calculate_cooling_kpis(extracted_params, project_info, env_data)
+    
+    # 4. 生成报告 (Markdown)
+    scheme_text = agent.generate_cooling_scheme(context, project_info, env_data, province, opt_result, green_plan_text)
+    
+    # 组装给 Graph 的 state
+    cooling_plan = {
+        "cooling_technology": extracted_params.get("regional_cooling_preference", "未知"),
+        "estimated_pue": kpis.get("predicted_PUE", 1.3),
+        "predicted_wue": kpis.get("predicted_WUE", 1.6),
+        "cooling_power_consumption": kpis.get("cooling_power_kw", 0),
+        "waste_heat_recovery_kw": kpis.get("waste_heat_recovery_kw", 0),
+        
+        # 塞入富文本和过程数据，供 graph.py 写 Markdown 报告使用
+        "strategy_optimization_trace": opt_result["optimization_trace"],
+        "scheme_detail_brief": scheme_text,
+    }
+    
+    state["cooling_plan"] = cooling_plan
+    
+    print(f"✅ 制冷选型: {cooling_plan['cooling_technology']}")
+    print(f"✅ 预测 PUE: {cooling_plan['estimated_pue']} | WUE: {cooling_plan['predicted_wue']}")
+    print("="*60)
+    
+    return state

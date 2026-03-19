@@ -85,12 +85,16 @@ class EnergyPlan(TypedDict, total=False):
 
 class CoolingPlan(TypedDict, total=False):
     """制冷方案数据结构"""
-    cooling_technology: str                # 制冷技术: "风冷"/"液冷"/"间接蒸发冷却"/"自然冷却"
+    cooling_technology: str                # 制冷技术
     estimated_pue: float                   # 预计年均PUE
     cooling_power_consumption: float       # 制冷功耗（kW）
     free_cooling_hours: int                # 自然冷却小时数
     equipment_list: List[Dict[str, Any]]   # 设备清单
-
+    # ---- Agent 3 新增兼容字段 ----
+    predicted_wue: float                   # 预计 WUE
+    waste_heat_recovery_kw: float          # 余热回收功率
+    scheme_detail_brief: str               # Markdown 详细报告
+    strategy_optimization_trace: str       # 寻优跟踪记录
 
 class ReviewResult(TypedDict, total=False):
     """审核评估结果数据结构"""
@@ -533,15 +537,15 @@ def save_report_as_markdown(state: dict, output_path: str = "output/final_report
         os.makedirs(output_dir)
     
     # 优先使用最终报告节点生成的内容
-    final_report = state.get("final_report")
-    if final_report:
-        try:
-            with open(output_path, "w", encoding="utf-8") as f:
-                f.write(final_report)
-            return True
-        except Exception as e:
-            print(f"⚠️ 无法保存报告：{e}")
-            return False
+    # final_report = state.get("final_report")
+    # if final_report:
+    #     try:
+    #         with open(output_path, "w", encoding="utf-8") as f:
+    #             f.write(final_report)
+    #         return True
+    #     except Exception as e:
+    #         print(f"⚠️ 无法保存报告：{e}")
+    #         return False
 
     # 兼容逻辑：若未经过最终报告节点，仍可回退到本地拼装
     # 获取各部分数据（容错处理）
@@ -554,6 +558,10 @@ def save_report_as_markdown(state: dict, output_path: str = "output/final_report
     
     # 获取 Agent 2 的 LLM 报告
     llm_report = energy_plan.get("llm_report", "") if energy_plan else ""
+    
+    # 获取 Agent 3 的深层数据与寻优追溯
+    scheme_detail = cooling_plan.get("scheme_detail_brief", "未生成详细制冷方案报告") if cooling_plan else "未生成详细制冷方案报告"
+    trace = cooling_plan.get("strategy_optimization_trace", "") if cooling_plan else ""
     
     # 构建完整报告
     full_report = f"""# GreenDataCenter 规划设计报告
@@ -579,15 +587,29 @@ def save_report_as_markdown(state: dict, output_path: str = "output/final_report
 
 {llm_report if llm_report else "未生成详细能源规划报告"}
 
+```
 ---
 
 ## 三、制冷方案 (Agent 3)
 
+### 1. 核心指标速览
 | 指标 | 数值 |
 |------|------|
-| 制冷技术 | {cooling_plan.get('cooling_technology', 'N/A') if cooling_plan else 'N/A'} |
-| 预计 PUE | {cooling_plan.get('estimated_pue', 'N/A') if cooling_plan else 'N/A'} |
-| 预计 WUE | {cooling_plan.get('predicted_wue', 'N/A') if cooling_plan else 'N/A'} |
+| **制冷技术** | {cooling_plan.get('cooling_technology', 'N/A') if cooling_plan else 'N/A'} |
+| **预计 PUE** | {cooling_plan.get('estimated_pue', 'N/A') if cooling_plan else 'N/A'} |
+| **预计 WUE** | {cooling_plan.get('predicted_wue', 'N/A') if cooling_plan else 'N/A'} L/kWh |
+| **余热回收** | {cooling_plan.get('waste_heat_recovery_kw', '0')} kW |
+
+### 2. 制冷策略详细报告
+{scheme_detail}
+
+<details>
+<summary>点击查看底层寻优算法追溯 (Trace Log)</summary>
+
+```text
+{trace}
+```
+</details>
 
 ---
 
