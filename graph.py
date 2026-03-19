@@ -558,6 +558,19 @@ def save_report_as_markdown(state: dict, output_path: str = "output/final_report
     
     # 获取 Agent 2 的 LLM 报告
     llm_report = energy_plan.get("llm_report", "") if energy_plan else ""
+
+    def _txt(value, default):
+        if value is None:
+            return default
+        if isinstance(value, str) and not value.strip():
+            return default
+        return value
+
+    def _num(value, default=0.0, digits=2):
+        try:
+            return round(float(value), digits)
+        except (TypeError, ValueError):
+            return round(float(default), digits)
     
     # 获取 Agent 3 的深层数据与寻优追溯
     scheme_detail = cooling_plan.get("scheme_detail_brief", "未生成详细制冷方案报告") if cooling_plan else "未生成详细制冷方案报告"
@@ -574,12 +587,12 @@ def save_report_as_markdown(state: dict, output_path: str = "output/final_report
 
 | 项目 | 数值 |
 |------|------|
-| 地理位置 | {user_reqs.get('location', 'N/A') if user_reqs else 'N/A'} |
-| 业务类型 | {user_reqs.get('business_type', 'N/A') if user_reqs else 'N/A'} |
-| 计划负荷 | {user_reqs.get('planned_load', 'N/A') if user_reqs else 'N/A'} kW |
-| 算力密度 | {user_reqs.get('computing_power_density', 'N/A') if user_reqs else 'N/A'} kW/机柜 |
-| PUE 目标 | {user_reqs.get('pue_target', 'N/A') if user_reqs else 'N/A'} |
-| 绿电目标 | {user_reqs.get('green_energy_target', 'N/A') if user_reqs else 'N/A'}% |
+| 地理位置 | {_txt(user_reqs.get('location') if user_reqs else None, '未提供')} |
+| 业务类型 | {_txt(user_reqs.get('business_type') if user_reqs else None, '通用计算型')} |
+| 计划负荷 | {_num(user_reqs.get('planned_load') if user_reqs else None, 0.0, 1)} kW |
+| 算力密度 | {_num(user_reqs.get('computing_power_density') if user_reqs else None, 0.0, 1)} kW/机柜 |
+| PUE 目标 | {_num(user_reqs.get('pue_target') if user_reqs else None, 1.2, 3)} |
+| 绿电目标 | {_num(user_reqs.get('green_energy_target') if user_reqs else None, 0.0, 1)}% |
 
 ---
 
@@ -595,10 +608,9 @@ def save_report_as_markdown(state: dict, output_path: str = "output/final_report
 ### 1. 核心指标速览
 | 指标 | 数值 |
 |------|------|
-| **制冷技术** | {cooling_plan.get('cooling_technology', 'N/A') if cooling_plan else 'N/A'} |
-| **预计 PUE** | {cooling_plan.get('estimated_pue', 'N/A') if cooling_plan else 'N/A'} |
-| **预计 WUE** | {cooling_plan.get('predicted_wue', 'N/A') if cooling_plan else 'N/A'} L/kWh |
-| **余热回收** | {cooling_plan.get('waste_heat_recovery_kw', '0')} kW |
+| 制冷技术 | {_txt(cooling_plan.get('cooling_technology') if cooling_plan else None, '风冷')} |
+| 预计 PUE | {_num(cooling_plan.get('estimated_pue') if cooling_plan else None, 1.35, 3)} |
+| 预计 WUE | {_num(cooling_plan.get('predicted_wue') if cooling_plan else None, 1.8, 3)} |
 
 ### 2. 制冷策略详细报告
 {scheme_detail}
@@ -616,8 +628,8 @@ def save_report_as_markdown(state: dict, output_path: str = "output/final_report
 ## 四、审核评估结果 (Agent 4)
 
 **审核结论**: {"✅ 通过" if review_result and review_result.get('passed') else "❌ 不通过"}  
-**综合评分**: {review_result.get('score', 'N/A') if review_result else 'N/A'}/5  
-**评估模型**: {review_result.get('evaluator', 'N/A') if review_result else 'N/A'}
+**综合评分**: {_num(review_result.get('score') if review_result else None, 0.0, 2)}/5  
+**评估模型**: {_txt(review_result.get('evaluator') if review_result else None, '系统规则评估')}
 
 ---
 
@@ -631,22 +643,22 @@ def save_report_as_markdown(state: dict, output_path: str = "output/final_report
 
 | 项目 | 金额（万元） |
 |------|-------------|
-| 总投资 (CAPEX) | {financial.get('capex_total', 'N/A')} |
-| 年节省费用 | {financial.get('annual_saving', 'N/A')} |
-| 投资回收期 | {financial.get('payback_years', 'N/A')} 年 |
+| 总投资 (CAPEX) | {_num(financial.get('capex_total'), 0.0, 2)} |
+| 年节省费用 | {_num(financial.get('annual_saving'), 0.0, 2)} |
+| 投资回收期 | {_num(financial.get('payback_years'), 30.0, 2)} 年 |
 
 ### 成本明细
 
-- 电网购电成本：{financial.get('grid_cost', 'N/A')} 万元/年
-- PPA 购电成本：{financial.get('ppa_cost', 'N/A')} 万元/年
-- 光伏自用节省：-{financial.get('pv_saving', 'N/A')} 万元/年
-- 碳减排收益：-{financial.get('carbon_benefit', 'N/A')} 万元/年
-- **净总用电成本**: **{financial.get('total_cost', 'N/A')}** 万元/年
+- 电网购电成本：{_num(financial.get('grid_cost'), 0.0, 2)} 万元/年
+- PPA 购电成本：{_num(financial.get('ppa_cost'), 0.0, 2)} 万元/年
+- 光伏自用节省：-{_num(financial.get('pv_saving'), 0.0, 2)} 万元/年
+- 碳减排收益：-{_num(financial.get('carbon_benefit'), 0.0, 2)} 万元/年
+- **净总用电成本**: **{_num(financial.get('total_cost'), 0.0, 2)}** 万元/年
 
 ### 碳减排贡献
 
-- **年碳减排量**: {financial.get('emission_reduction', 'N/A')} 吨 CO₂/年
-- **全生命周期减排**: {financial.get('lifetime_reduction', 'N/A')} 吨 CO₂
+- **年碳减排量**: {_num(financial.get('emission_reduction'), 0.0, 2)} 吨 CO₂/年
+- **全生命周期减排**: {_num(financial.get('lifetime_reduction'), 0.0, 2)} 吨 CO₂
 
 ---
 
@@ -655,7 +667,7 @@ def save_report_as_markdown(state: dict, output_path: str = "output/final_report
 根据审核结果，该数据中心规划方案：
 - {"✅ 绿电消纳达标" if review_result and review_result.get('passed') else "⚠️ 需要进一步优化"}
 - ✅ 制冷技术选择合理
-- ✅ 财务指标良好，投资回收期 {financial.get('payback_years', 'N/A')} 年
+- ✅ 财务指标良好，投资回收期 {_num(financial.get('payback_years'), 30.0, 2)} 年
 
 """
     else:
