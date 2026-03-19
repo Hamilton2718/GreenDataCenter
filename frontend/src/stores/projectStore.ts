@@ -142,6 +142,64 @@ export const useProjectStore = defineStore('project', () => {
     paybackYears: 6.5
   })
 
+  // 评估结果
+  const reviewResult = ref({
+    evaluation_text: '',
+    passed: false,
+    score: 0,
+    evaluator: 'Unknown'
+  })
+
+  // 反馈信息
+  const feedback = ref({
+    passed: false,
+    issues: [],
+    suggestions: [],
+    full_evaluation: '',
+    retry_required: false,
+    max_iterations_reached: false,
+    iteration_count: 0
+  })
+
+  // 财务分析结果
+  const financialAnalysis = ref({
+    location: '',
+    planned_load: 0,
+    total_electricity: 0,
+    annual_grid_purchase: 0,
+    green_consumption: 0,
+    ppa_volume: 0,
+    green_ratio: 0,
+    green_target: 0,
+    actual_pue: 0,
+    pue_target: 0,
+    grid_price: 0,
+    ppa_price: 0,
+    carbon_price: 0,
+    grid_cost: 0,
+    ppa_cost: 0,
+    pv_saving: 0,
+    carbon_benefit: 0,
+    carbon_compensation_cost: 0,
+    total_cost: 0,
+    capex_total: 0,
+    annual_saving: 0,
+    payback_years: 0,
+    emission_reduction: 0,
+    lifetime_reduction: 0,
+    cooling_tech: '',
+    curtailment_rate: 0,
+    simulation_used: false,
+    capex_breakdown: {
+      pv_system: 0,
+      storage_system: 0,
+      cooling_system: 0
+    }
+  })
+
+  // 最终报告
+  const finalReport = ref('')
+
   // 计算属性
   const progress = computed(() => {
     const completed = Object.values(agentStatus.value).filter(v => v).length
@@ -197,6 +255,31 @@ export const useProjectStore = defineStore('project', () => {
     }
   }
 
+  function updateReviewResult(data: any) {
+    reviewResult.value = { 
+      ...reviewResult.value, 
+      ...data
+    }
+  }
+
+  function updateFeedback(data: any) {
+    feedback.value = { 
+      ...feedback.value, 
+      ...data
+    }
+  }
+
+  function updateFinancialAnalysis(data: any) {
+    financialAnalysis.value = { 
+      ...financialAnalysis.value, 
+      ...data
+    }
+  }
+
+  function updateFinalReport(data: string) {
+    finalReport.value = data
+  }
+
   return {
     requirement,
     agentStatus,
@@ -205,12 +288,20 @@ export const useProjectStore = defineStore('project', () => {
     coolingPlan,
     simulationResult,
     investmentResult,
+    reviewResult,
+    feedback,
+    financialAnalysis,
+    finalReport,
     progress,
     updateRequirement,
     updateAgentStatus,
     resetAll,
     updateEnvData,
     updateEnergyPlan,
-    updateCoolingPlan
+    updateCoolingPlan,
+    updateReviewResult,
+    updateFeedback,
+    updateFinancialAnalysis,
+    updateFinalReport
   }
 })

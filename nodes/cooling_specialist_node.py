@@ -98,16 +98,33 @@ COOLING_SCHEME_PROMPT = ChatPromptTemplate.from_template("""
 # ======================== 核心类 ========================
 class CoolingAgent3:
     def __init__(self):
-        self.vector_store = None
-        self.retriever = None
-        # if has_rag:
-        #     try:
-        #         self.vector_store = build_or_load_vector_store()
-        #         if self.vector_store:
-        #             self.retriever = self.vector_store.as_retriever(search_kwargs={"k": 3})
-        #     except Exception:
-        #         pass
-        self.llm = ChatTongyi(model="qwen-max", temperature=0.2)
+        # 不再维护 RAG，直接使用标准接口查询
+        pass
+        
+        # 初始化 LLM（尝试）
+        try:
+            self.llm = ChatTongyi(
+                model="qwen-plus", 
+                temperature=0.1,
+                dashscope_api_key="sk-77a4c286b27e4c06aff03cccc38cc9d1"  # 正确传入 API Key
+            )
+        except Exception as e:
+            print(f"⚠️ LLM 初始化失败: {e}，将使用兜底参数")
+            self.llm = None
+
+    def retrieve_context(self, region: str, province: str, annual_temp: float, cabinet_power: float) -> str:
+        """从知识库检索相关信息并构建上下文（使用标准接口）"""
+        try:
+            # 直接返回兜底文本，避免RAG检索超时
+            print("⚠️ 跳过RAG检索，直接使用本地兜底规则构建上下文...")
+            regional_params = PROVINCE_COOLING_BASE_PARAMS.get(province, PROVINCE_COOLING_BASE_PARAMS["default"])
+            fallback_text = f"{province}地区数据中心强制要求PUE限值≤{regional_params['PUE_Limit']}，WUE限值≤{regional_params['WUE_Limit']} L/kWh。针对{cabinet_power}kW/机柜的算力（限值{regional_params['cabinet_power_limit']}），超限建议采用液冷技术，未超限建议风冷结合自然冷却。年均温{annual_temp}℃下，需注重节水与干冷。"
+            return fallback_text
+        except Exception as e:
+            print(f"⚠️ 构建上下文失败: {e}，启用本地兜底规则")
+            regional_params = PROVINCE_COOLING_BASE_PARAMS.get(province, PROVINCE_COOLING_BASE_PARAMS["default"])
+            fallback_text = f"{province}地区数据中心强制要求PUE限值≤{regional_params['PUE_Limit']}，WUE限值≤{regional_params['WUE_Limit']} L/kWh。针对{cabinet_power}kW/机柜的算力（限值{regional_params['cabinet_power_limit']}），超限建议采用液冷技术，未超限建议风冷结合自然冷却。年均温{annual_temp}℃下，需注重节水与干冷。"
+            return fallback_text
 
     def get_cop_correction_factor(self, annual_temp: float) -> float:
         if annual_temp <= 0: return TEMP_COP_CORRECTION["≤0"]

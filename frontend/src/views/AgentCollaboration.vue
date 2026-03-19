@@ -400,6 +400,191 @@
         </el-card>
       </div>
 
+      <!-- Agent 4: 方案验证专家 -->
+      <div v-if="activeAgent.id === 4" class="review-plan">
+        <!-- 评估结果 -->
+        <el-card shadow="hover" style="margin-bottom: 20px;">
+          <template #header>
+            <span>方案评估结果</span>
+          </template>
+          <div v-if="projectStore.reviewResult" class="markdown-content">
+            <div v-html="renderMarkdown(projectStore.reviewResult.evaluation_text)"></div>
+          </div>
+          <div v-else class="markdown-content">
+            <p>评估结果生成中...</p>
+          </div>
+        </el-card>
+
+        <!-- 决策信息 -->
+        <el-card shadow="hover" style="margin-bottom: 20px;">
+          <template #header>
+            <span>决策信息</span>
+          </template>
+          <el-descriptions :column="2" border>
+            <el-descriptions-item label="评估结论">
+              <el-tag :type="projectStore.reviewResult?.passed ? 'success' : 'danger'">
+                {{ projectStore.reviewResult?.passed ? '通过' : '不通过' }}
+              </el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="评估工具">
+              {{ projectStore.reviewResult?.evaluator || 'Unknown' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="综合评分">
+              {{ projectStore.reviewResult?.score || 0 }}/5
+            </el-descriptions-item>
+            <el-descriptions-item label="迭代次数">
+              {{ projectStore.feedback?.iteration_count || 0 }}
+            </el-descriptions-item>
+          </el-descriptions>
+        </el-card>
+
+        <!-- 反馈信息 -->
+        <el-card shadow="hover" style="margin-bottom: 20px;">
+          <template #header>
+            <span>反馈信息</span>
+          </template>
+          <div v-if="projectStore.feedback">
+            <div v-if="projectStore.feedback.issues && projectStore.feedback.issues.length > 0">
+              <h5>发现的问题：</h5>
+              <el-list>
+                <el-list-item v-for="(issue, index) in projectStore.feedback.issues" :key="index">
+                  <template #prefix>
+                    <el-tag size="small" type="danger">问题</el-tag>
+                  </template>
+                  {{ issue }}
+                </el-list-item>
+              </el-list>
+            </div>
+            <div v-if="projectStore.feedback.suggestions && projectStore.feedback.suggestions.length > 0">
+              <h5>改进建议：</h5>
+              <el-list>
+                <el-list-item v-for="(suggestion, index) in projectStore.feedback.suggestions" :key="index">
+                  <template #prefix>
+                    <el-tag size="small" type="info">建议</el-tag>
+                  </template>
+                  {{ suggestion }}
+                </el-list-item>
+              </el-list>
+            </div>
+          </div>
+          <div v-else>
+            <p>反馈信息生成中...</p>
+          </div>
+        </el-card>
+
+        <!-- 原始输出 -->
+        <el-card shadow="hover" style="margin-bottom: 20px;">
+          <template #header>
+            <span>原始输出</span>
+          </template>
+          <el-input type="textarea" :value="JSON.stringify({review_result: projectStore.reviewResult, feedback: projectStore.feedback, iteration_count: projectStore.feedback?.iteration_count}, null, 2)" :rows="10" readonly style="font-family: monospace;"></el-input>
+        </el-card>
+      </div>
+
+      <!-- Agent 5: 投资决策专家 -->
+      <div v-if="activeAgent.id === 5" class="financial-analysis">
+        <!-- 财务分析结果 -->
+        <el-card shadow="hover" style="margin-bottom: 20px;">
+          <template #header>
+            <span>财务分析结果</span>
+          </template>
+          <div v-if="projectStore.financialAnalysis" class="financial-content">
+            <el-descriptions :column="2" border>
+              <el-descriptions-item label="总投资">
+                {{ projectStore.financialAnalysis.capex_total }} 万元
+              </el-descriptions-item>
+              <el-descriptions-item label="投资回收期">
+                {{ projectStore.financialAnalysis.payback_years }} 年
+              </el-descriptions-item>
+              <el-descriptions-item label="年节省">
+                {{ projectStore.financialAnalysis.annual_saving }} 万元
+              </el-descriptions-item>
+              <el-descriptions-item label="年碳减排">
+                {{ projectStore.financialAnalysis.emission_reduction }} 吨 CO₂
+              </el-descriptions-item>
+              <el-descriptions-item label="总用电量">
+                {{ projectStore.financialAnalysis.total_electricity }} MWh
+              </el-descriptions-item>
+              <el-descriptions-item label="绿电比例">
+                {{ projectStore.financialAnalysis.green_ratio }}%
+              </el-descriptions-item>
+              <el-descriptions-item label="实际PUE">
+                {{ projectStore.financialAnalysis.actual_pue }}
+              </el-descriptions-item>
+              <el-descriptions-item label="制冷技术">
+                {{ projectStore.financialAnalysis.cooling_tech }}
+              </el-descriptions-item>
+            </el-descriptions>
+          </div>
+          <div v-else class="financial-content">
+            <p>财务分析结果生成中...</p>
+          </div>
+        </el-card>
+
+        <!-- 投资明细 -->
+        <el-card shadow="hover" style="margin-bottom: 20px;">
+          <template #header>
+            <span>投资明细</span>
+          </template>
+          <div v-if="projectStore.financialAnalysis && projectStore.financialAnalysis.capex_breakdown">
+            <el-descriptions :column="3" border>
+              <el-descriptions-item label="光伏系统">
+                {{ projectStore.financialAnalysis.capex_breakdown.pv_system }} 万元
+              </el-descriptions-item>
+              <el-descriptions-item label="储能系统">
+                {{ projectStore.financialAnalysis.capex_breakdown.storage_system }} 万元
+              </el-descriptions-item>
+              <el-descriptions-item label="制冷系统">
+                {{ projectStore.financialAnalysis.capex_breakdown.cooling_system }} 万元
+              </el-descriptions-item>
+            </el-descriptions>
+          </div>
+          <div v-else>
+            <p>投资明细生成中...</p>
+          </div>
+        </el-card>
+
+        <!-- 成本分析 -->
+        <el-card shadow="hover" style="margin-bottom: 20px;">
+          <template #header>
+            <span>成本分析</span>
+          </template>
+          <div v-if="projectStore.financialAnalysis">
+            <el-descriptions :column="2" border>
+              <el-descriptions-item label="购电成本">
+                {{ projectStore.financialAnalysis.grid_cost }} 万元
+              </el-descriptions-item>
+              <el-descriptions-item label="PPA成本">
+                {{ projectStore.financialAnalysis.ppa_cost }} 万元
+              </el-descriptions-item>
+              <el-descriptions-item label="光伏节省">
+                {{ projectStore.financialAnalysis.pv_saving }} 万元
+              </el-descriptions-item>
+              <el-descriptions-item label="碳减排收益">
+                {{ projectStore.financialAnalysis.carbon_benefit }} 万元
+              </el-descriptions-item>
+              <el-descriptions-item label="碳补偿成本">
+                {{ projectStore.financialAnalysis.carbon_compensation_cost }} 万元
+              </el-descriptions-item>
+              <el-descriptions-item label="总用电成本">
+                {{ projectStore.financialAnalysis.total_cost }} 万元
+              </el-descriptions-item>
+            </el-descriptions>
+          </div>
+          <div v-else>
+            <p>成本分析生成中...</p>
+          </div>
+        </el-card>
+
+        <!-- 原始输出 -->
+        <el-card shadow="hover" style="margin-bottom: 20px;">
+          <template #header>
+            <span>原始输出</span>
+          </template>
+          <el-input type="textarea" :value="JSON.stringify(projectStore.financialAnalysis, null, 2)" :rows="10" readonly style="font-family: monospace;"></el-input>
+        </el-card>
+      </div>
+
       <div class="agent-actions" v-if="activeAgent">
         <el-button @click="activeAgent = null">关闭</el-button>
         <el-button type="primary" @click="approveAgent">确认方案</el-button>
@@ -412,8 +597,11 @@
       <el-button @click="router.push('/requirement')">
         <el-icon><ArrowLeft /></el-icon> 上一步
       </el-button>
-      <el-button type="primary" @click="submitToSimulation">
+      <el-button v-if="projectStore.agentStatus.agent3" type="primary" @click="() => { submitToSimulation(); }">
         <el-icon><VideoPlay /></el-icon> 提交仿真验证
+      </el-button>
+      <el-button v-if="projectStore.agentStatus.agent4" type="success" @click="() => { submitToFinancial(); }">
+        <el-icon><Money /></el-icon> 提交财务分析
       </el-button>
     </div>
   </div>
@@ -476,8 +664,8 @@ const agents = ref([
   },
   {
     id: 4,
-    name: '仿真验证专家',
-    desc: '模拟24小时运行情况',
+    name: '方案验证专家',
+    desc: '验证方案技术性、经济性合理性',
     icon: 'VideoPlay',
     status: projectStore.agentStatus.agent4,
     progress: projectStore.agentStatus.agent4 ? 100 : 0
@@ -613,6 +801,7 @@ const fetchEnergyPlan = async () => {
     const data = await response.json()
     if (data.success) {
       projectStore.updateEnergyPlan(data.data)
+      projectStore.updateAgentStatus('agent2', true)
       ElMessage.success('能源规划数据获取成功！')
     } else {
       ElMessage.error('获取能源规划数据失败：' + (data.error || '未知错误'))
@@ -716,6 +905,14 @@ const approveAgent = () => {
     activeAgent.value.status = true
     activeAgent.value.progress = 100
     ElMessage.success(`${activeAgent.value.name} 方案已确认`)
+    
+    // 检查是否是agent5且所有前面的agent都已完成
+    if (activeAgent.value.id === 5 && projectStore.agentStatus.agent1 && projectStore.agentStatus.agent2 && projectStore.agentStatus.agent3 && projectStore.agentStatus.agent4) {
+      ElMessage.success('所有方案已确认，正在跳转到仿真页面...')
+      // 跳转到仿真页面
+      router.push('/simulation')
+    }
+    
     activeAgent.value = null
   }
 }
@@ -726,10 +923,186 @@ const rejectAgent = () => {
 }
 
 // 提交仿真验证
-const submitToSimulation = () => {
-  // 模拟Agent 4开始工作
-  projectStore.updateAgentStatus('agent4', true)
-  router.push('/simulation')
+const submitToSimulation = async () => {
+  try {
+    // 检查Agent 2和3是否完成
+    if (!projectStore.agentStatus.agent2 || !projectStore.agentStatus.agent3) {
+      ElMessage.error('请先完成能源规划和制冷方案设计')
+      return
+    }
+    
+    // 检查能源方案数据
+    if (projectStore.energyPlan.pv_capacity === 0 && projectStore.energyPlan.wind_capacity === 0 && projectStore.energyPlan.storage_capacity === 0) {
+      ElMessage.error('能源方案数据不完整，请重新生成能源规划')
+      return
+    }
+    
+    // 检查制冷方案数据
+    if (!projectStore.coolingPlan.primary || !projectStore.coolingPlan.secondary || !projectStore.coolingPlan.pue) {
+      ElMessage.error('制冷方案数据不完整，请重新生成制冷方案')
+      return
+    }
+    
+    ElMessage.info('正在提交方案验证...')
+    
+    // 准备请求数据
+    const requestData = {
+      user_requirements: {
+        location: projectStore.requirement.location,
+        planned_load: projectStore.requirement.load * 1000, // 转换为kW
+        pue_target: projectStore.requirement.pueTarget,
+        green_energy_target: projectStore.requirement.greenTarget,
+        computing_power_density: projectStore.requirement.density
+      },
+      environmental_data: {
+        annual_temperature: projectStore.envData.climate.avgTemp,
+        carbon_emission_factor: projectStore.envData.carbonFactor
+      },
+      energy_plan: {
+        pv_capacity: projectStore.energyPlan.pv_capacity,
+        wind_capacity: projectStore.energyPlan.wind_capacity,
+        storage_capacity: projectStore.energyPlan.storage_capacity,
+        ppa_ratio: projectStore.energyPlan.ppa_ratio
+      },
+      cooling_plan: {
+        cooling_technology: projectStore.coolingPlan.primary,
+        estimated_pue: projectStore.coolingPlan.pue,
+        incremental_cost: 500 // 默认值
+      }
+    }
+    
+    console.log('发送给后端的验证数据:', requestData)
+    
+    // 调用后端API
+    console.log('准备发送验证请求...')
+    try {
+      const response = await fetch('http://localhost:5001/api/agent4/review', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestData)
+      })
+      
+      console.log('API响应状态:', response.status)
+      
+      if (response.ok) {
+        const result = await response.json()
+        console.log('API响应数据:', result)
+        
+        if (result.success) {
+          // 更新评估结果和反馈信息
+          projectStore.updateReviewResult(result.data.review_result)
+          projectStore.updateFeedback(result.data.feedback)
+          projectStore.updateAgentStatus('agent4', true)
+          
+          console.log('更新后的reviewResult:', projectStore.reviewResult)
+          console.log('更新后的feedback:', projectStore.feedback)
+          
+          ElMessage.success('方案验证完成')
+          // 显示Agent 4的详情
+          showAgentDetail(4)
+        } else {
+          ElMessage.error('方案验证失败: ' + result.error)
+        }
+      } else {
+        const errorText = await response.text()
+        console.log('服务器错误:', errorText)
+        ElMessage.error('服务器错误，请稍后重试')
+      }
+    } catch (error) {
+      console.error('网络请求失败:', error)
+      ElMessage.error('网络请求失败，请检查后端服务是否运行')
+    }
+  } catch (error) {
+    console.error('提交仿真验证失败:', error)
+    ElMessage.error('提交仿真验证失败，请稍后重试')
+  }
+}
+
+// 提交财务分析
+const submitToFinancial = async () => {
+  try {
+    // 检查Agent 4是否完成
+    if (!projectStore.agentStatus.agent4) {
+      ElMessage.error('请先完成方案验证')
+      return
+    }
+    
+    ElMessage.info('正在提交财务分析...')
+    
+    // 准备请求数据
+    const requestData = {
+      user_requirements: {
+        location: projectStore.requirement.location,
+        planned_load: projectStore.requirement.load * 1000, // 转换为kW
+        pue_target: projectStore.requirement.pueTarget,
+        green_energy_target: projectStore.requirement.greenTarget,
+        computing_power_density: projectStore.requirement.density
+      },
+      environmental_data: {
+        annual_temperature: projectStore.envData.climate.avgTemp,
+        carbon_emission_factor: projectStore.envData.carbonFactor
+      },
+      energy_plan: {
+        pv_capacity: projectStore.energyPlan.pv_capacity,
+        wind_capacity: projectStore.energyPlan.wind_capacity,
+        storage_capacity: projectStore.energyPlan.storage_capacity,
+        ppa_ratio: projectStore.energyPlan.ppa_ratio
+      },
+      cooling_plan: {
+        cooling_technology: projectStore.coolingPlan.primary,
+        estimated_pue: projectStore.coolingPlan.pue,
+        incremental_cost: 500 // 默认值
+      },
+      review_result: projectStore.reviewResult
+    }
+    
+    console.log('发送给后端的财务分析数据:', requestData)
+    
+    // 调用后端API
+    console.log('准备发送财务分析请求...')
+    try {
+      const response = await fetch('http://localhost:5001/api/agent5/financial', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestData)
+      })
+      
+      console.log('API响应状态:', response.status)
+      
+      if (response.ok) {
+        const result = await response.json()
+        console.log('API响应数据:', result)
+        
+        if (result.success) {
+          // 更新财务分析结果
+          projectStore.updateFinancialAnalysis(result.data.financial_analysis)
+          projectStore.updateAgentStatus('agent5', true)
+          
+          console.log('更新后的financialAnalysis:', projectStore.financialAnalysis)
+          
+          ElMessage.success('财务分析完成')
+          // 显示Agent 5的详情
+          showAgentDetail(5)
+        } else {
+          ElMessage.error('财务分析失败: ' + result.error)
+        }
+      } else {
+        const errorText = await response.text()
+        console.log('服务器错误:', errorText)
+        ElMessage.error('服务器错误，请稍后重试')
+      }
+    } catch (error) {
+      console.error('网络请求失败:', error)
+      ElMessage.error('网络请求失败，请检查后端服务是否运行')
+    }
+  } catch (error) {
+    console.error('提交财务分析失败:', error)
+    ElMessage.error('提交财务分析失败，请稍后重试')
+  }
 }
 
 onMounted(() => {

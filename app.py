@@ -149,6 +149,9 @@ from nodes.energy_planner_node import energy_planner_node
 
 # 导入cooling_specialist_node
 from nodes.cooling_specialist_node import cooling_specialist_node
+from nodes.review_node import review_node
+from nodes.financial_consultant_node import financial_consultant_node
+from nodes.final_report_node import final_report_node
 
 # 能源规划Agent
 class EnergyPlanAgent:
@@ -346,6 +349,85 @@ def agent3_cooling_plan():
         return jsonify({
             'success': True,
             'data': cooling_plan
+        })
+    except Exception as e:
+        print(f"错误: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/agent4/review', methods=['POST'])
+def agent4_review():
+    """
+    Agent 4专用接口：方案验证与评估
+    """
+    try:
+        # 获取前端发送的JSON数据
+        data = request.json
+        print(f"接收到的Agent 4数据: {data}")
+        
+        # 调用review_node进行方案评估
+        result = review_node(data)
+        
+        # 提取评估结果和反馈信息
+        review_result = result.get("review_result", {})
+        feedback = result.get("feedback", {})
+        
+        # 返回结果
+        return jsonify({
+            'success': True,
+            'data': {
+                'review_result': review_result,
+                'feedback': feedback,
+                'iteration_count': result.get('iteration_count', 0)
+            }
+        })
+    except Exception as e:
+        print(f"错误: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/agent5/financial', methods=['POST'])
+def agent5_financial():
+    """
+    Agent 5专用接口：综合评价与投资决策
+    """
+    try:
+        # 获取前端发送的JSON数据
+        data = request.json
+        print(f"接收到的Agent 5数据: {data}")
+        
+        # 调用financial_consultant_node进行财务分析
+        result = financial_consultant_node(data)
+        
+        # 提取财务分析结果
+        financial_analysis = result.get("financial_analysis", {})
+        
+        # 返回结果
+        return jsonify({
+            'success': True,
+            'data': {
+                'financial_analysis': financial_analysis
+            }
+        })
+    except Exception as e:
+        print(f"错误: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/generate-report', methods=['POST'])
+def generate_report():
+    """
+    生成最终报告
+    """
+    try:
+        # 获取前端发送的JSON数据
+        data = request.json
+        print(f"接收到的报告生成数据: {data}")
+        
+        # 调用final_report_node生成最终报告
+        result = final_report_node(data)
+        
+        # 返回完整的状态数据
+        return jsonify({
+            'success': True,
+            'data': result
         })
     except Exception as e:
         print(f"错误: {str(e)}")

@@ -208,9 +208,64 @@ const goBack = () => {
   router.push('/design')
 }
 
-const continueToReport = () => {
-  projectStore.updateAgentStatus('agent5', true)
-  router.push('/report')
+const generateFinalReport = async () => {
+  try {
+    ElMessage.info('正在生成最终报告...')
+    
+    // 准备请求数据
+    const requestData = {
+      user_requirements: projectStore.requirement,
+      environmental_data: projectStore.envData,
+      energy_plan: projectStore.energyPlan,
+      cooling_plan: projectStore.coolingPlan,
+      simulation_result: projectStore.simulationResult,
+      financial_analysis: projectStore.financialAnalysis
+    }
+    
+    console.log('发送给后端的报告生成数据:', requestData)
+    
+    // 调用后端API
+    const response = await fetch('http://localhost:5001/api/generate-report', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(requestData)
+    })
+    
+    if (response.ok) {
+      const result = await response.json()
+      console.log('API响应数据:', result)
+      
+      if (result.success) {
+        // 更新最终报告
+        projectStore.updateFinalReport(result.data.final_report)
+        ElMessage.success('最终报告生成完成')
+        return true
+      } else {
+        ElMessage.error('报告生成失败: ' + result.error)
+        return false
+      }
+    } else {
+      const errorText = await response.text()
+      console.log('服务器错误:', errorText)
+      ElMessage.error('服务器错误，请稍后重试')
+      return false
+    }
+  } catch (error) {
+    console.error('生成最终报告失败:', error)
+    ElMessage.error('生成最终报告失败，请稍后重试')
+    return false
+  }
+}
+
+const continueToReport = async () => {
+  // 生成最终报告
+  const success = await generateFinalReport()
+  if (success) {
+    projectStore.updateAgentStatus('agent5', true)
+    router.push('/report')
+  }
 }
 
 onMounted(() => {

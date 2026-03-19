@@ -40,7 +40,6 @@ def generate_final_report(state: Dict[str, Any]) -> str:
     energy_plan = state.get("energy_plan", {}) or {}
     cooling_plan = state.get("cooling_plan", {}) or {}
     simulation = state.get("simulation_result", {}) or {}
-    sim_summary = simulation.get("summary", {}) if simulation else {}
     financial = state.get("financial_analysis", {}) or {}
 
     # 项目概况兜底
@@ -83,6 +82,105 @@ def generate_final_report(state: Dict[str, Any]) -> str:
     daily_storage_discharge = _to_num(sim_summary.get("daily_storage_discharge_mwh"), 0.0, 3)
     sim_method = _to_text(sim_summary.get("method"), "粗仿真（典型日）")
 
+    # 从前端数据结构中提取所需字段
+    # 用户需求
+    location = user_req.get('location', 'N/A')
+    business_type = user_req.get('businessType', user_req.get('business_type', 'N/A'))
+    planned_load = user_req.get('load', user_req.get('planned_load', 'N/A'))
+    if planned_load != 'N/A':
+        planned_load = f"{int(planned_load) * 1000} kW"  # 转换为kW
+    else:
+        planned_load = f"{planned_load} kW"
+    computing_power_density = user_req.get('density', user_req.get('computing_power_density', 'N/A'))
+    if computing_power_density != 'N/A':
+        computing_power_density = f"{computing_power_density} kW/机柜"
+    priority = user_req.get('priority', 'N/A')
+    green_energy_target = user_req.get('greenTarget', user_req.get('green_energy_target', 'N/A'))
+    if green_energy_target != 'N/A':
+        green_energy_target = f"{green_energy_target}%"
+    pue_target = user_req.get('pueTarget', user_req.get('pue_target', 'N/A'))
+
+    # 环境数据
+    climate = env_data.get('climate', {}) or {}
+    annual_temperature = climate.get('avgTemp', env_data.get('annual_temperature', 'N/A'))
+    if annual_temperature != 'N/A':
+        annual_temperature = f"{annual_temperature}°C"
+    annual_wind_speed = climate.get('windSpeed', env_data.get('annual_wind_speed', 'N/A'))
+    if annual_wind_speed != 'N/A':
+        annual_wind_speed = f"{annual_wind_speed} m/s"
+    annual_sunshine_hours = climate.get('solarRadiation', env_data.get('annual_sunshine_hours', 'N/A'))
+    if annual_sunshine_hours != 'N/A':
+        annual_sunshine_hours = f"{annual_sunshine_hours} 小时"
+    carbon_emission_factor = env_data.get('carbonFactor', env_data.get('carbon_emission_factor', 'N/A'))
+    if carbon_emission_factor != 'N/A':
+        carbon_emission_factor = f"{carbon_emission_factor} kgCO2/kWh"
+
+    # 能源方案
+    pv_capacity = energy_plan.get('pv_capacity', 'N/A')
+    if pv_capacity == 'N/A':
+        solar = energy_plan.get('solar', {}) or {}
+        pv_capacity = solar.get('capacity', 'N/A')
+    if pv_capacity != 'N/A':
+        pv_capacity = f"{pv_capacity} kW"
+    storage_capacity = energy_plan.get('storage_capacity', 'N/A')
+    storage_power = energy_plan.get('storage_power', 'N/A')
+    if storage_capacity == 'N/A' or storage_power == 'N/A':
+        storage = energy_plan.get('storage', {}) or {}
+        if storage_capacity == 'N/A':
+            storage_capacity = storage.get('energy', 'N/A')
+        if storage_power == 'N/A':
+            storage_power = storage.get('capacity', 'N/A')
+    if storage_capacity != 'N/A' and storage_power != 'N/A':
+        storage_system = f"{storage_capacity} kWh / {storage_power} kW"
+    else:
+        storage_system = "N/A"
+    ppa_ratio = energy_plan.get('ppa_ratio', 'N/A')
+    if ppa_ratio == 'N/A':
+        ppa = energy_plan.get('ppa', {}) or {}
+        ppa_ratio = ppa.get('ratio', 'N/A')
+    if ppa_ratio != 'N/A':
+        ppa_ratio = f"{ppa_ratio}%"
+    grid_ratio = energy_plan.get('grid_ratio', 'N/A')
+    if grid_ratio == 'N/A':
+        grid = energy_plan.get('grid', {}) or {}
+        grid_ratio = grid.get('ratio', 'N/A')
+    if grid_ratio != 'N/A':
+        grid_ratio = f"{grid_ratio}%"
+
+    # 制冷方案
+    cooling_technology = cooling_plan.get('cooling_technology', 'N/A')
+    if cooling_technology == 'N/A':
+        primary = cooling_plan.get('primary', '')
+        secondary = cooling_plan.get('secondary', '')
+        if primary and secondary:
+            cooling_technology = f"{primary} + {secondary}"
+        elif primary:
+            cooling_technology = primary
+    estimated_pue = cooling_plan.get('estimated_pue', cooling_plan.get('pue', 'N/A'))
+
+    # 财务分析
+    payback_years = financial.get('payback_period', financial.get('payback_years', 'N/A'))
+    if payback_years != 'N/A':
+        payback_years = f"{payback_years} 年"
+    irr = financial.get('irr', 'N/A')
+    if irr != 'N/A':
+        irr = f"{irr}%"
+    npv = financial.get('npv', 'N/A')
+    if npv != 'N/A':
+        npv = f"{npv} 万元"
+    lcoe = financial.get('lcoe', 'N/A')
+    if lcoe != 'N/A':
+        lcoe = f"{lcoe} 元/kWh"
+
+    # 仿真结果
+    green_ratio = simulation.get('greenRatio', 'N/A')
+    if green_ratio != 'N/A':
+        green_ratio = f"{green_ratio}%"
+    pue = simulation.get('pue', 'N/A')
+    storage_efficiency = simulation.get('storageEfficiency', 'N/A')
+    if storage_efficiency != 'N/A':
+        storage_efficiency = f"{storage_efficiency}%"
+
     report = f"""# 数据中心绿电消纳规划设计建议书
 
 ## 一、项目概况
@@ -90,31 +188,31 @@ def generate_final_report(state: Dict[str, Any]) -> str:
 
 | 项目 | 数值 |
 |------|------|
-| 地理位置 | {location} |
-| 业务类型 | {business_type} |
-| 计划负荷 | {planned_load} kW |
-| 算力密度 | {computing_power_density} kW/机柜 |
-| 优先级 | {priority} |
-| 绿电目标 | {green_target}% |
-| PUE 目标 | {pue_target} |
+| 地理位置 | {user_req.get('location', 'N/A')} |
+| 业务类型 | {user_req.get('business_type', 'N/A')} |
+| 计划负荷 | {user_req.get('planned_load', 'N/A')} kW |
+| 算力密度 | {user_req.get('computing_power_density', 'N/A')} kW/机柜 |
+| 优先级 | {user_req.get('priority', 'N/A')} |
+| 绿电目标 | {user_req.get('green_energy_target', 'N/A')}% |
+| PUE 目标 | {user_req.get('pue_target', 'N/A')} |
 
 ## 二、环境条件分析
 
 | 环境参数 | 数值 |
 |---------|------|
-| 年均温度 | {annual_temperature}°C |
-| 年均风速 | {annual_wind_speed} m/s |
-| 年日照时长 | {annual_sunshine_hours} 小时 |
-| 碳排因子 | {carbon_factor} kgCO2/kWh |
+| 年均温度 | {env_data.get('annual_temperature', 'N/A')}°C |
+| 年均风速 | {env_data.get('annual_wind_speed', 'N/A')} m/s |
+| 年日照时长 | {env_data.get('annual_sunshine_hours', 'N/A')} 小时 |
+| 碳排因子 | {env_data.get('carbon_emission_factor', 'N/A')} kgCO2/kWh |
 
 ## 三、能源配比方案
 
 | 能源类型 | 配置 |
 |---------|------|
-| 分布式光伏 | {pv_capacity} kW |
-| 储能系统 | {storage_capacity} kWh / {storage_power} kW |
-| 绿电长协 | {ppa_ratio}% |
-| 电网调峰 | {grid_ratio}% |
+| 分布式光伏 | {energy_plan.get('pv_capacity', 'N/A')} kW |
+| 储能系统 | {energy_plan.get('storage_capacity', 'N/A')} kWh / {energy_plan.get('storage_power', 'N/A')} kW |
+| 绿电长协 | {energy_plan.get('ppa_ratio', 'N/A')}% |
+| 电网调峰 | {energy_plan.get('grid_ratio', 'N/A')}% |
 
 ## 四、制冷技术方案
 
@@ -127,21 +225,21 @@ def generate_final_report(state: Dict[str, Any]) -> str:
 
 | 财务指标 | 数值 |
 |---------|------|
-| 投资回收期 | {_to_num(payback_period, 30.0, 2)} 年 |
-| 内部收益率 (IRR) | {_to_num(irr, 0.0, 2)}% |
-| 净现值 (NPV) | {_to_num(npv, 0.0, 2)} 万元 |
-| 平准化电力成本 (LCOE) | {_to_num(lcoe, 0.0, 4)} 元/kWh |
+| 投资回收期 | {financial.get('payback_period', financial.get('payback_years', 'N/A'))} 年 |
+| 内部收益率 (IRR) | {financial.get('irr', 'N/A')}% |
+| 净现值 (NPV) | {financial.get('npv', 'N/A')} 万元 |
+| 平准化电力成本 (LCOE) | {financial.get('lcoe', 'N/A')} 元/kWh |
 
 ## 六、24小时粗仿真摘要
 
 | 指标 | 数值 |
 |------|------|
-| 日IT用电量 | {daily_it_energy} MWh |
-| 日绿电供给量 | {daily_green_supply} MWh |
-| 日绿电占比 | {daily_green_ratio}% |
-| 储能日充电量 | {daily_storage_charge} MWh |
-| 储能日放电量 | {daily_storage_discharge} MWh |
-| 仿真方法 | {sim_method} |
+| 日IT用电量 | {sim_summary.get('daily_it_energy_mwh', 'N/A')} MWh |
+| 日绿电供给量 | {sim_summary.get('daily_green_supply_mwh', 'N/A')} MWh |
+| 日绿电占比 | {sim_summary.get('daily_green_ratio_pct', 'N/A')}% |
+| 储能日充电量 | {sim_summary.get('daily_storage_charge_mwh', 'N/A')} MWh |
+| 储能日放电量 | {sim_summary.get('daily_storage_discharge_mwh', 'N/A')} MWh |
+| 仿真方法 | {sim_summary.get('method', 'N/A')} |
 
 ---
 *本报告由 GreenDataCenter 智能规划系统自动生成*
