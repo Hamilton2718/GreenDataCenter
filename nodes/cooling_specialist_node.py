@@ -44,6 +44,17 @@ CWSI_MAP = {
     "贵州": 0.46, "甘肃": 0.35, "宁夏": 0.31, "default": 0.50
 }
 
+# 各省份制冷基准参数（用于兜底规则）
+PROVINCE_COOLING_BASE_PARAMS = {
+    "北京": {"PUE_Limit": 1.15, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
+    "上海": {"PUE_Limit": 1.25, "WUE_Limit": 1.8, "cabinet_power_limit": 20.0},
+    "广东": {"PUE_Limit": 1.25, "WUE_Limit": 1.8, "cabinet_power_limit": 20.0},
+    "浙江": {"PUE_Limit": 1.25, "WUE_Limit": 1.8, "cabinet_power_limit": 20.0},
+    "内蒙古": {"PUE_Limit": 1.15, "WUE_Limit": 1.5, "cabinet_power_limit": 25.0},
+    "四川": {"PUE_Limit": 1.20, "WUE_Limit": 1.6, "cabinet_power_limit": 20.0},
+    "default": {"PUE_Limit": 1.30, "WUE_Limit": 1.8, "cabinet_power_limit": 20.0}
+}
+
 # ======================== Prompt模板 ========================
 PARAM_EXTRACTION_PROMPT = PromptTemplate(
     template="""
@@ -333,10 +344,68 @@ class CoolingAgent3:
             priority=project_info.get("priority", "环保型"),
             green_energy_plan_text=green_energy_plan
         )
+        
+        if self.llm is None:
+            return self._generate_fallback_scheme(project_info, env_data, province, opt_result, green_energy_plan)
+        
         try:
             return self.llm.invoke(prompt_val).content.strip()
         except Exception as e:
-            return f"报告生成失败: {e}"
+            print(f"⚠️ LLM 调用失败: {e}，使用兜底报告")
+            return self._generate_fallback_scheme(project_info, env_data, province, opt_result, green_energy_plan)
+    
+    def _generate_fallback_scheme(self, project_info: Dict[str, Any], env_data: Dict[str, Any], province: str, opt_result: Dict[str, Any], green_energy_plan: str) -> str:
+        cabinet_power = project_info.get("computing_power_density", 8)
+        annual_temp = env_data.get("annual_temperature", 15.0)
+        target_pue = project_info.get("pue_target", 1.2)
+        green_target = project_info.get("green_energy_target", 90)
+        location = project_info.get("location", "未知")
+        
+        return f"""# {location}数据中心制冷方案设计报告
+
+## 一、制冷策略寻优逻辑解析
+
+基于多目标优化函数：
+
+$$F = \\alpha \\cdot f(PUE) + \\beta \\cdot f(WUE) + \\gamma \\cdot f(TCO) + \\delta \\cdot f(CUE) - \\varepsilon \\cdot f(WHR)$$
+
+系统根据以下条件进行权重调整：
+
+- **算力密度**：{cabinet_power} kW/机柜
+- **年均温度**：{annual_temp}℃
+- **水资源指数**：{CWSI_MAP.get(province, 0.5)}
+- **目标PUE**：{target_pue}
+
+## 二、多方案打分对比
+
+{opt_result.get("optimization_trace", "寻优过程记录")}
+
+## 三、最优架构落地指南
+
+针对 **{cabinet_power} kW/机柜** 的算力密度，推荐采用**液冷技术**结合自然冷却方案：
+
+### 冷源配置
+- 干冷器 + 自然冷却模块
+- 利用低温环境实现免费制冷
+
+### 末端配置
+- 冷板式液冷或浸没式液冷
+- 高密度机柜散热解决方案
+
+### 预期效果
+- **预计 PUE**：{target_pue}
+- **预计 WUE**：0.3 L/kWh
+
+## 四、源网荷储与余热协同
+
+结合绿电规划（{green_energy_plan}），建议：
+
+1. **余热回收**：利用余热回收为园区供暖（北方地区）
+2. **储能协同**：储能系统配合削峰填谷运行
+3. **绿电消纳**：目标 {green_target}%
+
+---
+*本报告由系统兜底逻辑生成*"""
 
 # ======================== 节点暴露函数 ========================
 def cooling_specialist_node(state: dict) -> dict:
@@ -391,8 +460,9 @@ def cooling_specialist_node(state: dict) -> dict:
     # 4. 生成报告 (Markdown)
     scheme_text = agent.generate_cooling_scheme(context, project_info, env_data, province, opt_result, green_plan_text)
     
-    # 组装给 Graph 的 state
+    # 组装给 Graph 的 state - 匹配前端期望的数据结构
     cooling_plan = {
+        # 核心指标
         "cooling_technology": extracted_params.get("regional_cooling_preference", "未知"),
         "estimated_pue": kpis.get("predicted_PUE", 1.3),
         "predicted_wue": kpis.get("predicted_WUE", 1.6),
@@ -402,6 +472,34 @@ def cooling_specialist_node(state: dict) -> dict:
         # 塞入富文本和过程数据，供 graph.py 写 Markdown 报告使用
         "strategy_optimization_trace": opt_result["optimization_trace"],
         "scheme_detail_brief": scheme_text,
+        
+        # 前端表格需要的嵌套对象
+        "cooling_project_info": {
+            "location": project_info.get("location", "未知"),
+            "it_load_kW": project_info.get("planned_load", 0),
+            "cabinet_power_kW": project_info.get("computing_power_density", 8),
+            "target_pue": project_info.get("pue_target", 1.2),
+            "green_energy_target": project_info.get("green_energy_target", 90)
+        },
+        
+        "cooling_calc_params": {
+            "PUE_Limit": extracted_params.get("PUE_Limit", 1.30),
+            "WUE_Limit": extracted_params.get("WUE_Limit", 1.60),
+            "cooling_eff_coeff": extracted_params.get("cooling_eff_coeff", 4.0),
+            "facility_loss_coeff": extracted_params.get("facility_loss_coeff", 0.07),
+            "regional_cooling_preference": extracted_params.get("regional_cooling_preference", "未知")
+        },
+        
+        "cooling_kpis": {
+            "predicted_PUE": kpis.get("predicted_PUE", 1.3),
+            "predicted_WUE": kpis.get("predicted_WUE", 1.6),
+            "cooling_power_kw": kpis.get("cooling_power_kw", 0),
+            "corrected_cop": kpis.get("corrected_cop", 4.0),
+            "waste_heat_recovery_kw": kpis.get("waste_heat_recovery_kw", 0)
+        },
+        
+        # 余热回收策略
+        "waste_heat_recovery_strategy": f"基于{project_info.get('location', '本地')}地区的气候条件，推荐采用{'液冷余热回收系统' if kpis.get('waste_heat_recovery_kw', 0) > 0 else '传统风冷系统'}。预计可回收{kpis.get('waste_heat_recovery_kw', 0):.1f} kW余热，可用于园区供暖或预热新风系统。"
     }
     
     state["cooling_plan"] = cooling_plan

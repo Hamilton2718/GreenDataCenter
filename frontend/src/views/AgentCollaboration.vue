@@ -283,7 +283,7 @@
             <span>方案摘要</span>
           </template>
           <div v-if="projectStore.coolingPlan.scheme_detail_brief" class="markdown-content">
-            {{ projectStore.coolingPlan.scheme_detail_brief }}
+            <div v-html="renderMarkdown(projectStore.coolingPlan.scheme_detail_brief)"></div>
           </div>
           <div v-else class="markdown-content">
             <p>方案摘要生成中...</p>
@@ -622,6 +622,8 @@ import {
   LegendComponent,
   GridComponent
 } from 'echarts/components'
+import katex from 'katex'
+import 'katex/dist/katex.min.css'
 
 use([
   CanvasRenderer,
@@ -884,17 +886,74 @@ const fetchCoolingPlan = async () => {
 
 // 渲染Markdown为HTML
 const renderMarkdown = (markdown: string): string => {
-  // 简单的Markdown解析
+  if (!markdown) return ''
+  
   let html = markdown
-    // 标题
-    .replace(/^# (.*$)/gm, '<h1>$1</h1>')
-    .replace(/^## (.*$)/gm, '<h2>$1</h2>')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+  
+  // 渲染LaTeX公式（行间公式 $$...$$）
+  html = html.replace(/\$\$([\s\S]*?)\$\$/g, (_, formula) => {
+    try {
+      return `<div class="katex-block">${katex.renderToString(formula.trim(), { displayMode: true, throwOnError: false })}</div>`
+    } catch (e) {
+      return `<div class="katex-error">$$${formula}$$</div>`
+    }
+  })
+  
+  // 渲染LaTeX公式（行内公式 $...$）
+  html = html.replace(/\$([^$\n]+?)\$/g, (_, formula) => {
+    try {
+      return katex.renderToString(formula.trim(), { displayMode: false, throwOnError: false })
+    } catch (e) {
+      return `$${formula}$`
+    }
+  })
+  
+  // 代码块
+  html = html
+    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="language-$1">$2</code></pre>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+  
+  // 粗体和斜体
+  html = html
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+  
+  // 标题
+  html = html
+    .replace(/^#### (.*$)/gm, '<h4>$1</h4>')
     .replace(/^### (.*$)/gm, '<h3>$1</h3>')
-    // 列表
+    .replace(/^## (.*$)/gm, '<h2>$1</h2>')
+    .replace(/^# (.*$)/gm, '<h1>$1</h1>')
+  
+  // 列表
+  html = html
+    .replace(/^\d+\. (.*$)/gm, '<li>$1</li>')
     .replace(/^- (.*$)/gm, '<li>$1</li>')
-    .replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>')
-    // 段落
-    .replace(/^(?!<h|.*<ul|.*<li).*$/gm, '<p>$&</p>')
+    .replace(/(<li>[\s\S]*?<\/li>\n?)+/g, '<ul>$&</ul>')
+    .replace(/<\/ul>\n<ul>/g, '')
+  
+  // 分隔线和链接
+  html = html
+    .replace(/^---+$/gm, '<hr>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
+  
+  // 段落处理
+  html = html.split('\n\n').map(block => {
+    if (block.startsWith('<h') || block.startsWith('<ul') || block.startsWith('<ol') || 
+        block.startsWith('<pre') || block.startsWith('<hr') || block.startsWith('<p') ||
+        block.startsWith('<div class="katex')) {
+      return block
+    }
+    return block.split('\n').map(line => {
+      if (line.trim() && !line.startsWith('<')) {
+        return `<p>${line}</p>`
+      }
+      return line
+    }).join('\n')
+  }).join('\n')
+  
   return html
 }
 
@@ -1208,6 +1267,78 @@ onMounted(() => {
 .markdown-content li {
   margin: 5px 0;
   color: #606266;
+}
+
+.markdown-content h4 {
+  font-size: 13px;
+  font-weight: bold;
+  margin: 8px 0;
+  color: #E6A23C;
+}
+
+.markdown-content strong {
+  font-weight: bold;
+  color: #303133;
+}
+
+.markdown-content em {
+  font-style: italic;
+  color: #606266;
+}
+
+.markdown-content code {
+  background: #e4e7ed;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 13px;
+  color: #e6a23c;
+}
+
+.markdown-content pre {
+  background: #2d3748;
+  padding: 15px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 15px 0;
+}
+
+.markdown-content pre code {
+  background: transparent;
+  color: #e2e8f0;
+  padding: 0;
+}
+
+.markdown-content hr {
+  border: none;
+  border-top: 1px solid #dcdfe6;
+  margin: 20px 0;
+}
+
+.markdown-content a {
+  color: #409EFF;
+  text-decoration: none;
+}
+
+.markdown-content a:hover {
+  text-decoration: underline;
+}
+
+.markdown-content .katex-block {
+  display: block;
+  text-align: center;
+  margin: 20px 0;
+  padding: 15px;
+  background: #f5f7fa;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+.markdown-content .katex-error {
+  color: #f56c6c;
+  background: #fef0f0;
+  padding: 10px;
+  border-radius: 4px;
 }
 
 /* 报告头部样式 */
