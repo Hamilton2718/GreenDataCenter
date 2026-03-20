@@ -40,6 +40,7 @@ def generate_final_report(state: Dict[str, Any]) -> str:
     energy_plan = state.get("energy_plan", {}) or {}
     cooling_plan = state.get("cooling_plan", {}) or {}
     simulation = state.get("simulation_result", {}) or {}
+    sim_summary = simulation.get("summary", {}) if simulation else {}
     financial = state.get("financial_analysis", {}) or {}
 
     # 项目概况兜底
