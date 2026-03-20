@@ -202,6 +202,11 @@
         </el-col>
       </el-row>
 
+      <el-divider content-position="left">一日电价曲线</el-divider>
+      <el-card class="price-chart-card">
+        <v-chart ref="priceChartRef" :option="priceChartOption" style="width: 100%; height: 300px" />
+      </el-card>
+
       <div class="data-refresh">
         <el-button type="success" plain @click="refreshData">
           <el-icon><Refresh /></el-icon> 刷新数据
@@ -233,13 +238,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, onMounted, computed, watch, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useProjectStore } from '../stores/projectStore'
+import VChart from 'vue-echarts'
+import * as echarts from 'echarts'
 
 const router = useRouter()
 const projectStore = useProjectStore()
+const priceChartRef = ref<InstanceType<typeof VChart> | null>(null)
 
 const form = reactive({
   location: projectStore.requirement.location,
@@ -257,6 +265,101 @@ const envData = reactive(projectStore.envData)
 const showMap = ref(false)
 const formRef = ref()
 const refreshTime = ref(new Date().toLocaleString())
+
+const priceChartOption = computed(() => {
+  // 生成24小时的时间标签
+  const hours = Array.from({ length: 24 }, (_, i) => `${i}:00`)
+  
+  // 根据不同时段的电价生成24小时的电价数据
+  const electricity = envData.electricity || {}
+  const { peakPrice, highPrice, flatPrice, valleyPrice, deepValleyPrice } = electricity
+  
+  // 定义不同时段的电价
+  // 假设时段划分：
+  // 深谷: 0:00-6:00
+  // 低谷: 6:00-8:00, 22:00-24:00
+  // 平段: 8:00-10:00, 15:00-18:00
+  // 高峰: 10:00-15:00, 18:00-22:00
+  // 尖峰: 12:00-14:00
+  
+  const prices = hours.map((_, index) => {
+    let basePrice = 0
+    if (index >= 0 && index < 6) {
+      basePrice = deepValleyPrice || 0
+    } else if ((index >= 6 && index < 8) || (index >= 22 && index < 24)) {
+      basePrice = valleyPrice || 0
+    } else if ((index >= 8 && index < 10) || (index >= 15 && index < 18)) {
+      basePrice = flatPrice || 0
+    } else if ((index >= 10 && index < 12) || (index >= 14 && index < 15) || (index >= 18 && index < 22)) {
+      basePrice = highPrice || 0
+    } else if (index >= 12 && index < 14) {
+      basePrice = peakPrice || 0
+    }
+    
+    // 添加随机波动，使曲线更真实
+    // 波动范围为基础价格的 ±5%
+    const fluctuation = basePrice * 0.05 * (Math.random() * 2 - 1)
+    return basePrice + fluctuation
+  })
+  
+  return {
+    tooltip: {
+      trigger: 'axis',
+      formatter: function(params: any) {
+        const data = params[0]
+        return `${data.name}<br/>电价: ${data.value.toFixed(4)} 元/kWh`
+      }
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '3%',
+      containLabel: true
+    },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: hours,
+      axisLabel: {
+        rotate: 45
+      }
+    },
+    yAxis: {
+      type: 'value',
+      name: '电价 (元/kWh)',
+      axisLabel: {
+        formatter: '{value}'
+      }
+    },
+    series: [
+      {
+        name: '电价',
+        type: 'line',
+        data: prices,
+        smooth: true,
+        lineStyle: {
+          color: '#409EFF',
+          width: 2
+        },
+        areaStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            {
+              offset: 0,
+              color: 'rgba(64, 158, 255, 0.5)'
+            },
+            {
+              offset: 1,
+              color: 'rgba(64, 158, 255, 0.1)'
+            }
+          ])
+        },
+        itemStyle: {
+          color: '#409EFF'
+        }
+      }
+    ]
+  }
+})
 
 const rules = {
   location: [{ required: true, message: '请选择地理位置', trigger: 'blur' }],
@@ -671,6 +774,14 @@ const selectLocation = () => {
 .refresh-time {
   color: #909399;
   font-size: 0.9rem;
+}
+
+.price-chart-card {
+  margin-top: 20px;
+}
+
+.price-chart-card :deep(.el-card__body) {
+  padding: 16px;
 }
 
 .agent-status-container {
