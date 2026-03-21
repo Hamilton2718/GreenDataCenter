@@ -37,6 +37,94 @@
         </div>
       </template>
 
+      <!-- Agent 1: 需求解析专家 -->
+      <div v-if="activeAgent.id === 1" class="requirement-analysis">
+        <!-- 项目基本信息 -->
+        <el-card shadow="hover" style="margin-bottom: 20px;">
+          <template #header>
+            <span>项目基本信息</span>
+          </template>
+          <el-descriptions :column="2" border>
+            <el-descriptions-item label="地理位置">
+              {{ projectStore.requirement.location }}
+            </el-descriptions-item>
+            <el-descriptions-item label="业务类型">
+              {{ projectStore.requirement.businessType }}
+            </el-descriptions-item>
+            <el-descriptions-item label="计划面积">
+              {{ projectStore.requirement.area }} m²
+            </el-descriptions-item>
+            <el-descriptions-item label="计划负荷">
+              {{ projectStore.requirement.load }} MW
+            </el-descriptions-item>
+            <el-descriptions-item label="算力密度">
+              {{ projectStore.requirement.density }} kW/机柜
+            </el-descriptions-item>
+            <el-descriptions-item label="优先级">
+              <el-tag v-for="p in projectStore.requirement.priority" :key="p" size="small" style="margin-right: 5px;">
+                {{ p === 'reliable' ? '可靠型' : (p === 'economic' ? '经济型' : '环保型') }}
+              </el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="绿电目标">
+              {{ projectStore.requirement.greenTarget }}%
+            </el-descriptions-item>
+            <el-descriptions-item label="PUE目标">
+              {{ projectStore.requirement.pueTarget }}
+            </el-descriptions-item>
+          </el-descriptions>
+        </el-card>
+
+        <!-- 环境数据 -->
+        <el-card shadow="hover" style="margin-bottom: 20px;">
+          <template #header>
+            <span>环境数据</span>
+          </template>
+          <el-row :gutter="20">
+            <el-col :span="6">
+              <el-statistic title="年均温度" :value="projectStore.envData.climate.avgTemp" :precision="2" suffix="°C" />
+            </el-col>
+            <el-col :span="6">
+              <el-statistic title="年均风速" :value="projectStore.envData.climate.windSpeed" :precision="2" suffix="m/s" />
+            </el-col>
+            <el-col :span="6">
+              <el-statistic title="年日照时数" :value="projectStore.envData.climate.solarRadiation" :precision="2" suffix="h" />
+            </el-col>
+            <el-col :span="6">
+              <el-statistic title="碳排因子" :value="projectStore.envData.carbonFactor" :precision="4" suffix="kg CO₂/kWh" />
+            </el-col>
+          </el-row>
+        </el-card>
+
+        <!-- 电价数据 -->
+        <el-card shadow="hover" style="margin-bottom: 20px;">
+          <template #header>
+            <span>电价数据</span>
+          </template>
+          <el-row :gutter="20">
+            <el-col :span="8">
+              <el-statistic title="尖峰电价" :value="projectStore.envData.electricity.peakPrice" :precision="4" suffix="元/kWh" />
+            </el-col>
+            <el-col :span="8">
+              <el-statistic title="高峰电价" :value="projectStore.envData.electricity.highPrice" :precision="4" suffix="元/kWh" />
+            </el-col>
+            <el-col :span="8">
+              <el-statistic title="平段电价" :value="projectStore.envData.electricity.flatPrice" :precision="4" suffix="元/kWh" />
+            </el-col>
+          </el-row>
+          <el-row :gutter="20" style="margin-top: 20px">
+            <el-col :span="8">
+              <el-statistic title="低谷电价" :value="projectStore.envData.electricity.valleyPrice" :precision="4" suffix="元/kWh" />
+            </el-col>
+            <el-col :span="8">
+              <el-statistic title="深谷电价" :value="projectStore.envData.electricity.deepValleyPrice" :precision="4" suffix="元/kWh" />
+            </el-col>
+            <el-col :span="8">
+              <el-statistic title="最大峰谷价差" :value="projectStore.envData.electricity.maxPriceDiff" :precision="4" suffix="元/kWh" />
+            </el-col>
+          </el-row>
+        </el-card>
+      </div>
+
       <!-- Agent 2: 能源规划专家 -->
       <div v-if="activeAgent.id === 2" class="energy-plan">
         <!-- 关键指标卡片 -->
@@ -942,6 +1030,115 @@ const renderMarkdown = (markdown: string): string => {
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '\n')
   
+  // 渲染Markdown表格
+  const parseTable = (tableLines: string[]): string => {
+    if (tableLines.length < 2) return ''
+    
+    // 解析表头
+    const headerCells = tableLines[0].split('|').map(cell => cell.trim()).filter(cell => cell !== '')
+    
+    // 解析分隔线（确定对齐方式）
+    const separatorLine = tableLines[1] || ''
+    const separators = separatorLine.split('|').map(cell => cell.trim()).filter(cell => cell !== '')
+    
+    // 确定每列的对齐方式
+    const aligns = separators.map(sep => {
+      if (sep.startsWith(':') && sep.endsWith(':')) return 'center'
+      if (sep.endsWith(':')) return 'right'
+      return 'left'
+    })
+    
+    // 解析数据行
+    const rows = tableLines.slice(2).map(line => {
+      return line.split('|').map(cell => cell.trim()).filter(cell => cell !== '')
+    }).filter(row => row.length > 0)
+    
+    // 生成HTML表格
+    let tableHtml = '<table class="markdown-table">'
+    
+    // 表头
+    tableHtml += '<thead><tr>'
+    headerCells.forEach((cell, index) => {
+      const align = aligns[index] || 'left'
+      tableHtml += `<th style="text-align: ${align}">${cell}</th>`
+    })
+    tableHtml += '</tr></thead>'
+    
+    // 数据行
+    if (rows.length > 0) {
+      tableHtml += '<tbody>'
+      rows.forEach(row => {
+        tableHtml += '<tr>'
+        row.forEach((cell, index) => {
+          const align = aligns[index] || 'left'
+          tableHtml += `<td style="text-align: ${align}">${cell}</td>`
+        })
+        tableHtml += '</tr>'
+      })
+      tableHtml += '</tbody>'
+    }
+    
+    tableHtml += '</table>'
+    return tableHtml
+  }
+  
+  // 查找并替换表格
+  const lines = html.split('\n')
+  let result: string[] = []
+  let tableBuffer: string[] = []
+  let inTable = false
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const trimmedLine = line.trim()
+    
+    // 检测表格行（以 | 开头或包含 | 且至少有3个）
+    const isTableRow = trimmedLine.startsWith('|') || (trimmedLine.includes('|') && trimmedLine.split('|').length >= 3)
+    const isSeparatorLine = trimmedLine.includes('|') && trimmedLine.replace(/\|/g, '').replace(/-/g, '').replace(/:/g, '').trim() === ''
+    
+    if (isTableRow || (inTable && trimmedLine === '')) {
+      if (trimmedLine !== '' || inTable) {
+        tableBuffer.push(line)
+        inTable = true
+      }
+      
+      // 检查是否应该结束表格
+      const nextLine = lines[i + 1] || ''
+      const isNextLineTableRow = nextLine.trim().startsWith('|') || (nextLine.trim().includes('|') && nextLine.trim().split('|').length >= 3)
+      const isNextLineSeparator = nextLine.trim().includes('|') && nextLine.trim().replace(/\|/g, '').replace(/-/g, '').replace(/:/g, '').trim() === ''
+      
+      if (!isNextLineTableRow && !isNextLineSeparator && tableBuffer.length >= 2) {
+        // 结束表格并渲染
+        const tableHtml = parseTable(tableBuffer)
+        if (tableHtml) {
+          result.push(tableHtml)
+        }
+        tableBuffer = []
+        inTable = false
+      }
+    } else {
+      if (inTable && tableBuffer.length >= 2) {
+        const tableHtml = parseTable(tableBuffer)
+        if (tableHtml) {
+          result.push(tableHtml)
+        }
+      }
+      result.push(line)
+      tableBuffer = []
+      inTable = false
+    }
+  }
+  
+  // 处理最后剩余的表格
+  if (inTable && tableBuffer.length >= 2) {
+    const tableHtml = parseTable(tableBuffer)
+    if (tableHtml) {
+      result.push(tableHtml)
+    }
+  }
+  
+  html = result.join('\n')
+  
   // 渲染LaTeX公式（行间公式 $$...$$）
   html = html.replace(/\$\$([\s\S]*?)\$\$/g, (_, formula) => {
     try {
@@ -989,11 +1186,11 @@ const renderMarkdown = (markdown: string): string => {
     .replace(/^---+$/gm, '<hr>')
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
   
-  // 段落处理
+  // 段落处理（跳过表格）
   html = html.split('\n\n').map(block => {
     if (block.startsWith('<h') || block.startsWith('<ul') || block.startsWith('<ol') || 
         block.startsWith('<pre') || block.startsWith('<hr') || block.startsWith('<p') ||
-        block.startsWith('<div class="katex')) {
+        block.startsWith('<div class="katex') || block.startsWith('<table')) {
       return block
     }
     return block.split('\n').map(line => {
@@ -1040,14 +1237,17 @@ const submitToSimulation = async () => {
       return
     }
     
-    // 检查能源方案数据
-    if (projectStore.energyPlan.pv_capacity === 0 && projectStore.energyPlan.wind_capacity === 0 && projectStore.energyPlan.storage_capacity === 0) {
+    // 检查能源方案数据 - 放宽检查条件，只要有 llm_report 就可以继续
+    if (!projectStore.energyPlan.llm_report && 
+        projectStore.energyPlan.pv_capacity === 0 && 
+        projectStore.energyPlan.wind_capacity === 0 && 
+        projectStore.energyPlan.storage_capacity === 0) {
       ElMessage.error('能源方案数据不完整，请重新生成能源规划')
       return
     }
     
-    // 检查制冷方案数据
-    if (!projectStore.coolingPlan.primary || !projectStore.coolingPlan.secondary || !projectStore.coolingPlan.pue) {
+    // 检查制冷方案数据 - 放宽检查条件，只要有 scheme_detail_brief 就可以继续
+    if (!projectStore.coolingPlan.cooling_technology && !projectStore.coolingPlan.scheme_detail_brief) {
       ElMessage.error('制冷方案数据不完整，请重新生成制冷方案')
       return
     }
@@ -1074,8 +1274,8 @@ const submitToSimulation = async () => {
         ppa_ratio: projectStore.energyPlan.ppa_ratio
       },
       cooling_plan: {
-        cooling_technology: projectStore.coolingPlan.primary,
-        estimated_pue: projectStore.coolingPlan.pue,
+        cooling_technology: projectStore.coolingPlan.cooling_technology,
+        estimated_pue: projectStore.coolingPlan.estimated_pue,
         incremental_cost: 500 // 默认值
       }
     }
@@ -1160,8 +1360,8 @@ const submitToFinancial = async () => {
         ppa_ratio: projectStore.energyPlan.ppa_ratio
       },
       cooling_plan: {
-        cooling_technology: projectStore.coolingPlan.primary,
-        estimated_pue: projectStore.coolingPlan.pue,
+        cooling_technology: projectStore.coolingPlan.cooling_technology,
+        estimated_pue: projectStore.coolingPlan.estimated_pue,
         incremental_cost: 500 // 默认值
       },
       review_result: projectStore.reviewResult
@@ -1215,6 +1415,13 @@ const submitToFinancial = async () => {
 }
 
 onMounted(() => {
+  // 设置Agent 1为已完成状态
+  projectStore.updateAgentStatus('agent1', true)
+  if (agents.value[0]) {
+    agents.value[0].status = true
+    agents.value[0].progress = 100
+  }
+  
   // 模拟Agent 2和3正在工作
   setTimeout(() => {
     projectStore.updateAgentStatus('agent2', true)
@@ -1389,6 +1596,29 @@ onMounted(() => {
   background: #fef0f0;
   padding: 10px;
   border-radius: 4px;
+}
+
+.markdown-content .markdown-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 15px 0;
+  background: white;
+}
+
+.markdown-content .markdown-table th,
+.markdown-content .markdown-table td {
+  border: 1px solid #dcdfe6;
+  padding: 10px 15px;
+}
+
+.markdown-content .markdown-table th {
+  background: #f5f7fa;
+  font-weight: bold;
+  color: #303133;
+}
+
+.markdown-content .markdown-table tbody tr:hover {
+  background: #f5f7fa;
 }
 
 /* 报告头部样式 */

@@ -5,16 +5,19 @@ import time
 import threading
 import queue
 from typing import Dict, Any, Generator
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-CORS(app)  # 启用CORS，允许跨域请求
+CORS(app)
 
-# 模拟多智能体编排框架
 class AgentOrchestrator:
-    """
-    多智能体编排器
-    """
-    
     def __init__(self):
         self.agents = {
             "env_analysis": EnvironmentAnalysisAgent(),
@@ -23,11 +26,12 @@ class AgentOrchestrator:
         }
     
     def process_task(self, task: Dict[str, Any], result_queue: queue.Queue):
-        """
-        处理任务
-        """
         try:
-            # 1. 环境分析Agent
+            logger.info("=" * 60)
+            logger.info("🚀 [AgentOrchestrator] 开始处理任务")
+            logger.info("=" * 60)
+            
+            logger.info("📋 [Agent 1: 环境分析] 开始处理...")
             result_queue.put({
                 "agent_id": "env_analysis",
                 "status": "processing",
@@ -40,9 +44,10 @@ class AgentOrchestrator:
                 "result": env_result,
                 "thought": "环境数据分析完成"
             })
+            logger.info("✅ [Agent 1: 环境分析] 处理完成")
             time.sleep(1)
             
-            # 2. 能源规划Agent
+            logger.info("⚡ [Agent 2: 能源规划] 开始处理...")
             result_queue.put({
                 "agent_id": "energy_plan",
                 "status": "processing",
@@ -55,9 +60,10 @@ class AgentOrchestrator:
                 "result": energy_result,
                 "thought": "能源规划方案制定完成"
             })
+            logger.info("✅ [Agent 2: 能源规划] 处理完成")
             time.sleep(1)
             
-            # 3. 制冷设计Agent
+            logger.info("❄️ [Agent 3: 制冷设计] 开始处理...")
             result_queue.put({
                 "agent_id": "cooling_design",
                 "status": "processing",
@@ -70,61 +76,53 @@ class AgentOrchestrator:
                 "result": cooling_result,
                 "thought": "制冷方案设计完成"
             })
+            logger.info("✅ [Agent 3: 制冷设计] 处理完成")
             time.sleep(1)
             
-            # 4. 任务完成
+            logger.info("🎉 [AgentOrchestrator] 所有任务已完成")
             result_queue.put({
                 "agent_id": "orchestrator",
                 "status": "completed",
                 "thought": "所有任务已完成"
             })
         except Exception as e:
+            logger.error(f"❌ [AgentOrchestrator] 任务执行失败: {str(e)}", exc_info=True)
             result_queue.put({
                 "agent_id": "orchestrator",
                 "status": "error",
                 "thought": f"任务执行失败: {str(e)}"
             })
         finally:
-            # 发送结束信号
             result_queue.put(None)
 
-# 导入DataCenterAgent1
 from nodes.requirement_analysis_node import DataCenterAgent1
 
-# 环境分析Agent
 class EnvironmentAnalysisAgent:
-    """
-    环境分析Agent
-    """
-    
     def __init__(self):
-        """
-        初始化环境分析Agent
-        """
         self.agent1 = DataCenterAgent1()
     
     def analyze(self, task: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        分析环境数据
-        """
-        # 从task中获取参数
         location = task.get('location', '')
         business_type = task.get('business_type', '通用')
-        planned_area = task.get('planned_area', 0)  # 平方米
-        planned_load = task.get('planned_load', 0)  # kW
-        Computing_power_density = task.get('Computing_power_density', 0)  # kW/机柜
+        planned_area = task.get('planned_area', 0)
+        planned_load = task.get('planned_load', 0)
+        Computing_power_density = task.get('Computing_power_density', 0)
         priority = task.get('priority', '环保型')
-        green_energy_target = task.get('green_energy_target', 90)  # %
+        green_energy_target = task.get('green_energy_target', 90)
         pue_target = task.get('pue_target', 1.2)
-        budget_constraint = task.get('budget_constraint', 0)  # 万元
+        budget_constraint = task.get('budget_constraint', 0)
         
-        # 使用DataCenterAgent1获取环境数据
+        logger.info(f"📍 位置: {location}")
+        logger.info(f"🏢 业务类型: {business_type}")
+        logger.info(f"⚡ 计划负荷: {planned_load} kW")
+        logger.info(f"🌿 绿电目标: {green_energy_target}%")
+        
+        logger.info("🌐 正在获取环境数据...")
         environmental_data = self.agent1.get_environmental_data(location)
         
-        # 使用DataCenterAgent1获取电价数据
+        logger.info("💰 正在获取电价数据...")
         electricity_price = self.agent1.get_electricity_price(location)
         
-        # 生成标准化数据包
         standardized_data = {
             "project_info": {
                 "location": location,
@@ -139,41 +137,27 @@ class EnvironmentAnalysisAgent:
             },
             "environmental_data": environmental_data,
             "electricity_price": electricity_price,
-            "timestamp": "2026-03-14"  # 使用当前时间
+            "timestamp": "2026-03-14"
         }
         
         return standardized_data
 
-# 导入energy_planner_node
 from nodes.energy_planner_node import energy_planner_node
-
-# 导入cooling_specialist_node
 from nodes.cooling_specialist_node import cooling_specialist_node
 from nodes.review_node import review_node
 from nodes.financial_consultant_node import financial_consultant_node
 from nodes.final_report_node import final_report_node
 
-# 能源规划Agent
 class EnergyPlanAgent:
-    """
-    能源规划Agent
-    """
-    
     def plan(self, env_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        制定能源规划方案
-        """
-        # 使用energy_planner_node生成能源规划方案
         result = energy_planner_node({
             "user_requirements": env_data.get("project_info", {}),
             "environmental_data": env_data.get("environmental_data", {}),
             "electricity_price": env_data.get("electricity_price", {})
         })
         
-        # 提取能源规划方案
         energy_plan = result.get("energy_plan", {})
         
-        # 构建返回数据
         return {
             "solar": {
                 "ratio": 30,
@@ -206,40 +190,24 @@ class EnergyPlanAgent:
             "api_data": energy_plan.get("api_data", "")
         }
 
-# 制冷设计Agent
 class CoolingDesignAgent:
-    """
-    制冷设计Agent
-    """
-    
     def design(self, env_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        设计制冷方案
-        """
-        # 模拟制冷设计
         return {
             "primary": "间接蒸发冷却",
             "secondary": "液冷机柜",
             "pue": 1.18
         }
 
-# 创建编排器实例
 orchestrator = AgentOrchestrator()
 
 @app.route('/api/analyze', methods=['POST'])
 def analyze():
-    """
-    分析项目需求
-    """
     try:
-        # 获取前端发送的JSON数据
         data = request.json
-        print(f"接收到的前端数据: {data}")
+        logger.info(f"📥 接收到前端数据: {json.dumps(data, ensure_ascii=False, indent=2)}")
         
-        # 创建结果队列
         result_queue = queue.Queue()
         
-        # 启动后台线程处理任务
         thread = threading.Thread(
             target=orchestrator.process_task,
             args=(data, result_queue)
@@ -247,29 +215,22 @@ def analyze():
         thread.daemon = True
         thread.start()
         
-        # 返回任务ID
         return jsonify({
             "task_id": "task_" + str(int(time.time())),
             "status": "started"
         })
     except Exception as e:
-        print(f"错误: {str(e)}")
+        logger.error(f"❌ 错误: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/stream/analyze', methods=['POST'])
 def stream_analyze():
-    """
-    流式返回分析结果
-    """
     try:
-        # 获取前端发送的JSON数据
         data = request.json
-        print(f"接收到的前端数据: {data}")
+        logger.info(f"📥 接收到前端数据 (流式): {json.dumps(data, ensure_ascii=False, indent=2)}")
         
-        # 创建结果队列
         result_queue = queue.Queue()
         
-        # 启动后台线程处理任务
         thread = threading.Thread(
             target=orchestrator.process_task,
             args=(data, result_queue)
@@ -277,21 +238,17 @@ def stream_analyze():
         thread.daemon = True
         thread.start()
         
-        # 流式返回结果
         def generate():
             while True:
                 try:
-                    # 从队列中获取结果
                     result = result_queue.get(timeout=30)
                     
-                    # 检查是否结束
                     if result is None:
                         break
                     
-                    # 转换为NDJSON格式
+                    logger.info(f"📤 发送流式数据: {result.get('agent_id', 'unknown')} - {result.get('status', 'unknown')}")
                     yield json.dumps(result) + '\n'
                     
-                    # 模拟延迟，使流式效果更明显
                     time.sleep(0.5)
                 except queue.Empty:
                     break
@@ -301,77 +258,79 @@ def stream_analyze():
             mimetype='application/x-ndjson'
         )
     except Exception as e:
-        print(f"错误: {str(e)}")
+        logger.error(f"❌ 错误: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/agent2/energy-plan', methods=['POST'])
 def agent2_energy_plan():
-    """
-    Agent 2专用接口：生成能源规划方案
-    """
     try:
-        # 获取前端发送的JSON数据
         data = request.json
-        print(f"接收到的Agent 2数据: {data}")
+        logger.info("=" * 60)
+        logger.info("⚡ [API] Agent 2 能源规划请求")
+        logger.info("=" * 60)
+        logger.info(f"📥 请求数据: {json.dumps(data, ensure_ascii=False, indent=2)}")
         
-        # 调用energy_planner_node生成能源规划方案
         result = energy_planner_node(data)
         
-        # 提取能源规划方案
         energy_plan = result.get("energy_plan", {})
         
-        # 返回结果
+        logger.info("✅ [API] Agent 2 能源规划完成")
+        logger.info(f"📊 光伏容量: {energy_plan.get('pv_capacity', 0)} kW")
+        logger.info(f"📊 储能容量: {energy_plan.get('storage_capacity', 0)} kWh")
+        logger.info(f"📊 绿电占比: {energy_plan.get('estimated_green_ratio', 0)}%")
+        
         return jsonify({
             'success': True,
             'data': energy_plan
         })
     except Exception as e:
-        print(f"错误: {str(e)}")
+        logger.error(f"❌ [API] Agent 2 错误: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/agent3/cooling-plan', methods=['POST'])
 def agent3_cooling_plan():
-    """
-    Agent 3专用接口：生成制冷方案
-    """
     try:
-        # 获取前端发送的JSON数据
         data = request.json
-        print(f"接收到的Agent 3数据: {data}")
+        logger.info("=" * 60)
+        logger.info("❄️ [API] Agent 3 制冷方案请求")
+        logger.info("=" * 60)
+        logger.info(f"📥 请求数据: {json.dumps(data, ensure_ascii=False, indent=2)}")
         
-        # 调用cooling_specialist_node生成制冷方案
         result = cooling_specialist_node(data)
         
-        # 提取制冷方案
         cooling_plan = result.get("cooling_plan", {})
         
-        # 返回结果
+        logger.info("✅ [API] Agent 3 制冷方案完成")
+        logger.info(f"📊 制冷技术: {cooling_plan.get('cooling_technology', 'N/A')}")
+        logger.info(f"📊 预计 PUE: {cooling_plan.get('estimated_pue', 'N/A')}")
+        logger.info(f"📊 预计 WUE: {cooling_plan.get('predicted_wue', 'N/A')}")
+        
         return jsonify({
             'success': True,
             'data': cooling_plan
         })
     except Exception as e:
-        print(f"错误: {str(e)}")
+        logger.error(f"❌ [API] Agent 3 错误: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/agent4/review', methods=['POST'])
 def agent4_review():
-    """
-    Agent 4专用接口：方案验证与评估
-    """
     try:
-        # 获取前端发送的JSON数据
         data = request.json
-        print(f"接收到的Agent 4数据: {data}")
+        logger.info("=" * 60)
+        logger.info("🔍 [API] Agent 4 方案验证请求")
+        logger.info("=" * 60)
+        logger.info(f"📥 请求数据: {json.dumps(data, ensure_ascii=False, indent=2)}")
         
-        # 调用review_node进行方案评估
         result = review_node(data)
         
-        # 提取评估结果和反馈信息
         review_result = result.get("review_result", {})
         feedback = result.get("feedback", {})
         
-        # 返回结果
+        logger.info("✅ [API] Agent 4 方案验证完成")
+        logger.info(f"📊 评估结果: {'通过' if review_result.get('passed') else '不通过'}")
+        logger.info(f"📊 评估工具: {review_result.get('evaluator', 'Unknown')}")
+        
         return jsonify({
             'success': True,
             'data': {
@@ -381,26 +340,26 @@ def agent4_review():
             }
         })
     except Exception as e:
-        print(f"错误: {str(e)}")
+        logger.error(f"❌ [API] Agent 4 错误: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/agent5/financial', methods=['POST'])
 def agent5_financial():
-    """
-    Agent 5专用接口：综合评价与投资决策
-    """
     try:
-        # 获取前端发送的JSON数据
         data = request.json
-        print(f"接收到的Agent 5数据: {data}")
+        logger.info("=" * 60)
+        logger.info("💰 [API] Agent 5 财务分析请求")
+        logger.info("=" * 60)
+        logger.info(f"📥 请求数据: {json.dumps(data, ensure_ascii=False, indent=2)}")
         
-        # 调用financial_consultant_node进行财务分析
         result = financial_consultant_node(data)
         
-        # 提取财务分析结果
         financial_analysis = result.get("financial_analysis", {})
         
-        # 返回结果
+        logger.info("✅ [API] Agent 5 财务分析完成")
+        logger.info(f"📊 总投资: {financial_analysis.get('capex_total', 0)} 万元")
+        logger.info(f"📊 投资回收期: {financial_analysis.get('payback_years', 0)} 年")
+        
         return jsonify({
             'success': True,
             'data': {
@@ -408,30 +367,34 @@ def agent5_financial():
             }
         })
     except Exception as e:
-        print(f"错误: {str(e)}")
+        logger.error(f"❌ [API] Agent 5 错误: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/generate-report', methods=['POST'])
 def generate_report():
-    """
-    生成最终报告
-    """
     try:
-        # 获取前端发送的JSON数据
         data = request.json
-        print(f"接收到的报告生成数据: {data}")
+        logger.info("=" * 60)
+        logger.info("📄 [API] 报告生成请求")
+        logger.info("=" * 60)
+        logger.info(f"📥 请求数据: {json.dumps(data, ensure_ascii=False, indent=2)}")
         
-        # 调用final_report_node生成最终报告
         result = final_report_node(data)
         
-        # 返回完整的状态数据
+        logger.info("✅ [API] 报告生成完成")
+        
         return jsonify({
             'success': True,
             'data': result
         })
     except Exception as e:
-        print(f"错误: {str(e)}")
+        logger.error(f"❌ [API] 报告生成错误: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
+    logger.info("=" * 60)
+    logger.info("🚀 GreenDataCenter 后端服务启动")
+    logger.info("=" * 60)
+    logger.info("🌐 服务地址: http://localhost:5001")
+    logger.info("📝 日志级别: INFO")
     app.run(host='0.0.0.0', port=5001, debug=True)

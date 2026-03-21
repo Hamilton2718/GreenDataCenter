@@ -470,6 +470,24 @@ class DataCenterAgent1:
         pue_target = user_input.get('pue_target', 1.2)
         budget_constraint = user_input.get('budget_constraint', 0)  # 万元
         
+        # 处理前端传来的优先级（可能是逗号分隔的英文值）
+        priority_mapping = {
+            "reliable": "可靠型",
+            "economic": "经济型",
+            "green": "环保型"
+        }
+        
+        # 如果 priority 是逗号分隔的字符串，取第一个
+        if isinstance(priority, str) and "," in priority:
+            priority_list = priority.split(",")
+            for p in priority_list:
+                p = p.strip()
+                if p in priority_mapping:
+                    priority = priority_mapping[p]
+                    break
+        elif priority in priority_mapping:
+            priority = priority_mapping[priority]
+        
         # 获取环境数据
         environmental_data = self.get_environmental_data(location)
         

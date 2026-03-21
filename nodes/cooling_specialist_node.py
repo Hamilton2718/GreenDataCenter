@@ -100,7 +100,7 @@ COOLING_SCHEME_PROMPT = ChatPromptTemplate.from_template("""
 2. **必须使用标准 Markdown 语法**进行排版（如使用 `#` 和 `##` 表示标题，`-` 或 `*` 表示列表，`|---|` 表示表格，`**` 表示加粗）。
 3. **数学公式规范**：仅在表达复杂数学公式或变量时使用 LaTeX 语法，且必须使用单美元符号 `$公式$`（行内）或双美元符号 `$$公式$$`（行间）包裹。不要在普通文字文本中使用 LaTeX 语法排版。
 4. 报告必须包含以下四个核心章节：
-   - **制冷策略寻优逻辑解析**：显式列出行间目标函数公式 $$\\min F_{{strategy}} = \\alpha \\cdot f(PUE) + \\beta \\cdot f(WUE) + \\gamma \\cdot f(TCO) + \\delta \\cdot f(CUE) - \\varepsilon \\cdot f(WHR)$$，并解释系统是如何根据用户的优先级（经济/环保）和当地水资源（CWSI）动态调整各项权重的（结合 Trace 中的权重数据）。
+   - **制冷策略寻优逻辑解析**：显式列出行间目标函数公式 $$\\min F_{{strategy}} = \\alpha \\cdot f(PUE) + \\beta \\cdot f(WUE) + \\gamma \\cdot f(TCO) + \\delta \\cdot f(CUE) - \\varepsilon \\cdot f(WHR)$$，并解释系统是如何根据用户的优先级（经济/环保/可靠）和当地水资源（CWSI）动态调整各项权重的（结合 Trace 中的权重数据）。
    - **多方案打分对比**：以标准 Markdown 表格（`|---|`）形式简述备选方案的得分情况，说明为何最终胜出的方案（得分最低者）是该环境下的最优解。
    - **最优架构落地指南**：针对胜出方案（主选路线），给出具体的末端（风冷/液冷）与冷源（冷却塔/干冷器）配置建议，必须体现算力密度引发的散热物理边界。
    - **源网荷储与余热协同**：必须结合上游传入的绿电规划建议（光伏/PPA/绿证配置策略）与本系统的冷却选型及余热回收潜力，给出绿电消纳与余热利用的闭环联动协同策略。
@@ -220,6 +220,25 @@ class CoolingAgent3:
     def evaluate_cooling_strategies(self, project_info: Dict[str, Any], province: str) -> Dict[str, Any]:
         cabinet_power = project_info.get("computing_power_density", 8.0)
         priority = project_info.get("priority", "环保型")
+        
+        # 处理前端传来的优先级（可能是逗号分隔的英文值）
+        priority_mapping = {
+            "reliable": "可靠型",
+            "economic": "经济型",
+            "green": "环保型"
+        }
+        
+        # 如果 priority 是逗号分隔的字符串，取第一个
+        if isinstance(priority, str) and "," in priority:
+            priority_list = priority.split(",")
+            for p in priority_list:
+                p = p.strip()
+                if p in priority_mapping:
+                    priority = priority_mapping[p]
+                    break
+        elif priority in priority_mapping:
+            priority = priority_mapping[priority]
+        
         cwsi = CWSI_MAP.get(province, CWSI_MAP["default"])
 
         alpha, beta, gamma, delta, epsilon = 0.3, 0.2, 0.3, 0.1, 0.1
@@ -231,6 +250,8 @@ class CoolingAgent3:
             delta += 0.2; epsilon += 0.1; gamma -= 0.1
         elif priority == "经济型":
             gamma += 0.3; delta -= 0.1
+        elif priority == "可靠型":
+            alpha += 0.25; gamma -= 0.15; epsilon += 0.15
 
         total_weight = alpha + beta + gamma + delta + epsilon
         w = {
@@ -304,7 +325,10 @@ class CoolingAgent3:
         it_load = project_info.get("planned_load", 0)
         cabinet_power = project_info.get("computing_power_density", 0)
         annual_temp = env_data.get("annual_temperature", 15.0)
-        raw_water_usage_lh = env_data.get("raw_water_usage", 6000.0)
+        province = project_info.get("location", "默认")
+        cwsi = CWSI_MAP.get(province, CWSI_MAP["default"])
+        
+        cooling_tech = params.get("regional_cooling_preference", "风冷")
 
         density_correction = 1.1 if cabinet_power >= params.get("cabinet_power_limit", 20.0) else 1.0
         cop_correction = self.get_cop_correction_factor(annual_temp)
@@ -319,7 +343,8 @@ class CoolingAgent3:
 
         total_energy = it_load + cooling_power_kw + facility_loss_kw
         pue = total_energy / it_load if it_load > 0 else 1.0
-        wue = raw_water_usage_lh / it_load if it_load > 0 else 0.0
+        
+        wue = self._calculate_wue(cooling_tech, cwsi, annual_temp, cooling_load_kw, it_load)
 
         return {
             "predicted_PUE": round(pue, 3), "predicted_WUE": round(wue, 3),
@@ -327,6 +352,43 @@ class CoolingAgent3:
             "cooling_power_kw": round(cooling_power_kw, 2),
             "facility_loss_kw": round(facility_loss_kw, 2), "corrected_cop": round(corrected_cop, 2)
         }
+    
+    def _calculate_wue(self, cooling_tech: str, cwsi: float, annual_temp: float, cooling_load_kw: float, it_load_kw: float) -> float:
+        """
+        计算预测 WUE (Water Usage Effectiveness)
+        WUE = 年总耗水量 / 年总IT能耗 (L/kWh)
+        
+        不同制冷技术的基准 WUE：
+        - 水冷+冷却塔：1.5-2.5 L/kWh（主要耗水：蒸发、排污、飞溅）
+        - 液冷系统：0.5-1.5 L/kWh（闭式循环，耗水较少）
+        - 风冷/干冷器：0.1-0.5 L/kWh（主要是加湿和辅助用水）
+        """
+        base_wue = 1.8
+        
+        if "液冷" in cooling_tech:
+            base_wue = 0.8
+        elif "干冷" in cooling_tech or "风冷" in cooling_tech:
+            base_wue = 0.3
+        elif "冷却塔" in cooling_tech or "水冷" in cooling_tech:
+            base_wue = 1.8
+        
+        cwsi_factor = 1.0 + (cwsi - 0.5) * 0.5
+        if cwsi <= 0.45:
+            cwsi_factor = 0.7
+        elif cwsi >= 0.6:
+            cwsi_factor = 1.3
+        
+        temp_factor = 1.0
+        if annual_temp > 25:
+            temp_factor = 1.2
+        elif annual_temp < 10:
+            temp_factor = 0.85
+        
+        load_factor = min(1.0, cooling_load_kw / (it_load_kw * 1.2)) if it_load_kw > 0 else 1.0
+        
+        predicted_wue = base_wue * cwsi_factor * temp_factor * load_factor
+        
+        return max(0.1, min(3.0, predicted_wue))
 
     def generate_cooling_scheme(self, context: str, project_info: Dict[str, Any], env_data: Dict[str, Any], province: str, opt_result: Dict[str, Any], green_energy_plan: str) -> str:
         prompt_val = COOLING_SCHEME_PROMPT.format(
