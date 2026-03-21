@@ -277,19 +277,6 @@
 
       <!-- Agent 3: 制冷架构专家 -->
       <div v-if="activeAgent.id === 3" class="cooling-plan">
-        <!-- 方案摘要 -->
-        <el-card shadow="hover" style="margin-bottom: 20px;">
-          <template #header>
-            <span>方案摘要</span>
-          </template>
-          <div v-if="projectStore.coolingPlan.scheme_detail_brief" class="markdown-content">
-            <div v-html="renderMarkdown(projectStore.coolingPlan.scheme_detail_brief)"></div>
-          </div>
-          <div v-else class="markdown-content">
-            <p>方案摘要生成中...</p>
-          </div>
-        </el-card>
-
         <!-- 核心指标 -->
         <el-row :gutter="20" style="margin-bottom: 20px;">
           <el-col :span="6">
@@ -398,6 +385,30 @@
             <p>余热回收策略生成中...</p>
           </div>
         </el-card>
+
+        <!-- 制冷方案报告 -->
+        <div class="markdown-report" v-if="projectStore.coolingPlan.scheme_detail_brief">
+          <div class="report-header">
+            <h4>📋 制冷方案报告</h4>
+            <el-button-group>
+              <el-button size="small" :type="coolingReportViewMode === 'preview' ? 'primary' : 'default'" @click="coolingReportViewMode = 'preview'">预览</el-button>
+              <el-button size="small" :type="coolingReportViewMode === 'code' ? 'primary' : 'default'" @click="coolingReportViewMode = 'code'">源码</el-button>
+              <el-button size="small" type="info" @click="exportCoolingReport('md')">导出MD</el-button>
+              <el-button size="small" type="info" @click="exportCoolingReport('html')">导出HTML</el-button>
+              <el-button size="small" type="primary" @click="regenerateCoolingReport">重新生成</el-button>
+            </el-button-group>
+          </div>
+          <div class="markdown-content" v-if="coolingReportViewMode === 'preview'" v-html="renderMarkdown(projectStore.coolingPlan.scheme_detail_brief)"></div>
+          <el-input v-else type="textarea" :value="projectStore.coolingPlan.scheme_detail_brief" :rows="15" readonly style="font-family: monospace;"></el-input>
+        </div>
+        <div class="markdown-report" v-else>
+          <h4>📋 制冷方案报告</h4>
+          <div class="markdown-content">
+            <p>报告生成中，请稍候...</p>
+            <p>或点击下方按钮重新生成报告</p>
+            <el-button type="primary" @click="regenerateCoolingReport" style="margin-top: 10px;">重新生成报告</el-button>
+          </div>
+        </div>
       </div>
 
       <!-- Agent 4: 方案验证专家 -->
@@ -686,6 +697,7 @@ const energyPlan = computed(() => projectStore.energyPlan)
 
 // 报告显示模式
 const reportViewMode = ref('preview')
+const coolingReportViewMode = ref('preview')
 
 // 优化建议
 const optimizationSuggestions = ref([
@@ -755,6 +767,44 @@ const exportReport = (format: 'md' | 'html') => {
   URL.revokeObjectURL(url)
   
   ElMessage.success(`报告已导出为 ${filename}`)
+}
+
+// 导出制冷方案报告
+const exportCoolingReport = (format: 'md' | 'html') => {
+  const reportContent = projectStore.coolingPlan.scheme_detail_brief
+  if (!reportContent) return
+  
+  let content = reportContent
+  let filename = '制冷方案报告'
+  let mimeType = 'text/plain'
+  
+  if (format === 'html') {
+    content = renderMarkdown(reportContent)
+    content = `<html><head><style>body { font-family: Arial, sans-serif; line-height: 1.6; padding: 20px; } h1 { color: #333; } h2 { color: #555; } ul { margin: 10px 0; } li { margin: 5px 0; } .katex-block { text-align: center; margin: 20px 0; } </style></head><body>${content}</body></html>`
+    filename += '.html'
+    mimeType = 'text/html'
+  } else {
+    filename += '.md'
+  }
+  
+  const blob = new Blob([content], { type: mimeType })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+  
+  ElMessage.success(`报告已导出为 ${filename}`)
+}
+
+// 重新生成制冷方案报告
+const regenerateCoolingReport = async () => {
+  ElMessage.info('正在重新生成制冷方案报告...')
+  await fetchCoolingPlan()
+  ElMessage.success('制冷方案报告已重新生成')
 }
 
 // 获取能源规划数据
