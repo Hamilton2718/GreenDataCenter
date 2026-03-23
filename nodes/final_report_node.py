@@ -1,250 +1,237 @@
 """
 最终报告生成节点 (Final Report Node)
 
-将 LangGraph 最终状态整理为 Markdown 报告，写入 state["final_report"]。
+改造目标：
+1. 让 LLM 直接阅读 state 全量信息并生成可行性报告（>=1000 字）。
+2. 节点内自动写入 output/final_report.md。
+3. 保持 LangGraph 节点接口不变。
+
+可选：支持工具型 Agent 创建方式（tools=[...]），便于后续接入 Tavily 等外部工具。
 """
 
-from typing import Dict, Any
+import json
+import os
+from datetime import datetime
+from typing import Dict, Any, List, Optional
+
+from langchain_openai import ChatOpenAI
 
 
-def _to_text(value: Any, default: str) -> str:
-    """将空值统一转为可展示文本，避免报告中出现 N/A。"""
-    if value is None:
-        return default
-    if isinstance(value, str) and not value.strip():
-        return default
-    return str(value)
+def _load_local_dotenv() -> None:
+    """轻量加载项目根目录 .env，避免直接运行脚本时取不到环境变量。"""
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    dotenv_path = os.path.join(project_root, ".env")
+    if not os.path.exists(dotenv_path):
+        return
+
+    with open(dotenv_path, "r", encoding="utf-8") as f:
+        for raw_line in f:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
 
 
-def _to_num(value: Any, default: float = 0.0, digits: int = 2) -> str:
-    """将数值统一格式化为字符串，空值回退到默认值。"""
+_load_local_dotenv()
+
+LLM_API_KEY = os.getenv("LLM_API_KEY", "")
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
+
+
+def _project_root() -> str:
+    """返回项目根目录（nodes 的上一级目录）。"""
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _output_report_path() -> str:
+    """统一报告输出路径。"""
+    return os.path.join(_project_root(), "output", "final_report.md")
+
+
+def _ensure_output_dir(path: str) -> None:
+    """确保输出目录存在。"""
+    output_dir = os.path.dirname(path)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+
+
+def _safe_json_dump(data: Dict[str, Any]) -> str:
+    """将 state 序列化为中文可读 JSON，便于 LLM 全量分析。"""
     try:
-        num = float(value)
-    except (TypeError, ValueError):
-        num = default
-    return f"{round(num, digits)}"
+        return json.dumps(data, ensure_ascii=False, indent=2, default=str)
+    except TypeError:
+        # 极端情况下存在不可序列化对象，降级为字符串
+        return str(data)
+
+
+def _build_state_snapshot(state: Dict[str, Any]) -> Dict[str, Any]:
+    """构建最终报告所需的全量快照，显式包含主要字段并保留原始 state。"""
+    return {
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "user_requirements": state.get("user_requirements", {}),
+        "environmental_data": state.get("environmental_data", {}),
+        "electricity_price": state.get("electricity_price", {}),
+        "load_profile": state.get("load_profile", {}),
+        "energy_plan": state.get("energy_plan", {}),
+        "cooling_plan": state.get("cooling_plan", {}),
+        "simulation_result": state.get("simulation_result", {}),
+        "review_result": state.get("review_result", {}),
+        "financial_analysis": state.get("financial_analysis", {}),
+        "iteration_count": state.get("iteration_count", 0),
+        "max_iterations": state.get("max_iterations", 3),
+        "error_message": state.get("error_message"),
+        # 保留原始 state，确保“浏览所有信息”
+        "raw_state": state,
+    }
+
+
+def create_report_agent(
+    llm: ChatOpenAI,
+    tools: Optional[List[Any]] = None,
+    system_prompt: str = ""
+):
+    """
+    创建报告 Agent。
+
+    用法示例（与用户期望形式一致）：
+        tools = [multiply, add, get_weather]
+        agent = create_report_agent(llm=llm, tools=tools, system_prompt="...")
+
+    说明：
+    - 本函数只使用 ReAct Agent。
+    - 若 ReAct 或工具不可用，直接抛错。
+    """
+    if not tools:
+        raise RuntimeError("create_report_agent 需要传入 tools，当前为空。")
+
+    try:
+        from langgraph.prebuilt import create_react_agent
+    except Exception as exc:
+        raise RuntimeError(f"create_react_agent 不可用，无法创建 ReAct Agent。{exc}") from exc
+
+    return create_react_agent(
+        llm,
+        tools,
+        prompt=system_prompt or "你是一名绿色数据中心可行性报告专家。"
+    )
+
+
+def _build_tavily_tools() -> List[Any]:
+    """构建 Tavily 联网搜索工具，失败时直接抛错。"""
+    if not TAVILY_API_KEY:
+        raise RuntimeError("缺少 TAVILY_API_KEY，无法启用 Tavily 联网搜索。")
+
+    os.environ["TAVILY_API_KEY"] = TAVILY_API_KEY
+
+    try:
+        from langchain_community.tools.tavily_search import TavilySearchResults
+    except Exception as exc:
+        raise RuntimeError(
+            f"Tavily 工具不可用，请安装 langchain-community 与 tavily 相关依赖。{exc}"
+        ) from exc
+
+    tavily_search = TavilySearchResults(max_results=5)
+    return [tavily_search]
+
+
+def _build_react_system_prompt() -> str:
+    """面向 ReAct 的系统提示词。"""
+    return """
+你是“绿色数据中心规划可行性总顾问（ReAct）”。
+
+工作方式（必须遵守）：
+1. 先阅读用户提供的 state_json，识别已给出的项目参数与缺失字段。
+2. 使用 Tavily 工具执行联网检索，至少覆盖以下方向：
+   - 数据中心相关政策/标准（PUE、绿电、碳管理）
+   - 区域电力与绿电市场趋势（如价格机制、绿证/长协）
+   - 近一年内可引用的行业实践或公开资料
+3. 将联网结果与 state 数据交叉验证，不能将未经验证的信息当作确定事实。
+4. 输出最终报告时，必须是 Markdown 且正文不少于 1000 字。
+
+报告硬性要求：
+- 必须包含结论：可行 / 有条件可行 / 暂不可行。
+- 必须显式区分：state 直接数据、联网补充信息、推导结论。
+- 关键数字若来自联网信息，请在文中注明“来源类型：联网检索”。
+- 若数据缺失，明确写出“数据缺失/待补充”及对结论影响。
+
+建议结构：
+- 标题与摘要
+- 1. 项目背景与目标约束
+- 2. 场址与环境可行性
+- 3. 能源系统与绿电消纳策略
+- 4. 制冷系统与能效路径
+- 5. 仿真结果解读与运行策略
+- 6. 财务可行性与投资回收
+- 7. 风险清单与缓解措施
+- 8. 实施路线图（近期/中期/远期）
+- 9. 综合结论与建议
+- 10. 关键指标汇总表
+""".strip()
+
+
+def _extract_agent_report(result: Any) -> str:
+    """从 ReAct Agent 返回结果中提取最终文本。"""
+    if isinstance(result, str):
+        return result
+
+    if isinstance(result, dict):
+        messages = result.get("messages")
+        if isinstance(messages, list) and messages:
+            last_msg = messages[-1]
+            if hasattr(last_msg, "content"):
+                content = last_msg.content
+                if isinstance(content, str):
+                    return content
+                if isinstance(content, list):
+                    parts = []
+                    for item in content:
+                        if isinstance(item, dict) and "text" in item:
+                            parts.append(str(item.get("text", "")))
+                        else:
+                            parts.append(str(item))
+                    return "\n".join(parts).strip()
+                return str(content)
+            return str(last_msg)
+
+    return str(result)
 
 
 def generate_final_report(state: Dict[str, Any]) -> str:
-    """
-    根据当前状态生成最终规划设计建议书（Markdown）。
+    """基于全量 state 生成最终报告。"""
+    snapshot = _build_state_snapshot(state)
+    state_json = _safe_json_dump(snapshot)
 
-    参数:
-        state: LangGraph 状态字典
+    llm = ChatOpenAI(
+        model="qwen-plus",
+        api_key=LLM_API_KEY,
+        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+    )
 
-    返回:
-        Markdown 格式报告字符串
-    """
-    user_req = state.get("user_requirements", {}) or {}
-    env_data = state.get("environmental_data", {}) or {}
-    energy_plan = state.get("energy_plan", {}) or {}
-    cooling_plan = state.get("cooling_plan", {}) or {}
-    simulation = state.get("simulation_result", {}) or {}
-    sim_summary = simulation.get("summary", {}) if simulation else {}
-    financial = state.get("financial_analysis", {}) or {}
+    try:
+        tools = _build_tavily_tools()
+        system_prompt = _build_react_system_prompt()
+        agent = create_report_agent(llm=llm, tools=tools, system_prompt=system_prompt)
 
-    # 项目概况兜底
-    location = _to_text(user_req.get("location"), "未提供")
-    business_type = _to_text(user_req.get("business_type"), "通用计算型")
-    planned_load = _to_num(user_req.get("planned_load"), 0, 1)
-    computing_power_density = _to_num(user_req.get("computing_power_density"), 0, 1)
-    priority = _to_text(user_req.get("priority"), "环保型")
-    green_target = _to_num(user_req.get("green_energy_target"), 0, 1)
-    pue_target = _to_num(user_req.get("pue_target"), 1.2, 3)
+        user_prompt = (
+            "请基于以下 state_json 先做必要联网检索，再生成最终可行性报告（Markdown，正文>=1000字）：\n\n"
+            f"{state_json}"
+        )
+        result = agent.invoke({"messages": [("user", user_prompt)]})
+        report = _extract_agent_report(result)
+    except Exception as exc:
+        raise RuntimeError(f"最终报告生成失败：LLM 不可用或调用异常。{exc}") from exc
 
-    # 环境参数兜底
-    annual_temperature = _to_num(env_data.get("annual_temperature"), 10.0, 2)
-    annual_wind_speed = _to_num(env_data.get("annual_wind_speed"), 4.0, 2)
-    annual_sunshine_hours = _to_num(env_data.get("annual_sunshine_hours"), 2500.0, 2)
-    carbon_factor = _to_num(env_data.get("carbon_emission_factor"), 0.5, 4)
+    if not isinstance(report, str):
+        report = str(report)
 
-    # 能源方案兜底
-    pv_capacity = _to_num(energy_plan.get("pv_capacity"), 0.0, 2)
-    storage_capacity = _to_num(energy_plan.get("storage_capacity"), 0.0, 2)
-    storage_power = _to_num(energy_plan.get("storage_power"), 0.0, 2)
-    ppa_ratio = _to_num(energy_plan.get("ppa_ratio"), 0.0, 2)
-    grid_ratio = _to_num(energy_plan.get("grid_ratio"), 0.0, 2)
-
-    # 制冷方案兜底
-    cooling_technology = _to_text(cooling_plan.get("cooling_technology"), "风冷")
-    estimated_pue = _to_num(cooling_plan.get("estimated_pue"), 1.35, 3)
-
-    # 财务指标兜底（优先读取统一字段，兼容旧字段）
-    payback_period = financial.get("payback_period", financial.get("payback_years", 30.0))
-    irr = financial.get("irr", 0.0)
-    npv = financial.get("npv", 0.0)
-    lcoe = financial.get("lcoe", 0.0)
-
-    # 仿真指标兜底
-    daily_it_energy = _to_num(sim_summary.get("daily_it_energy_mwh"), 0.0, 3)
-    daily_green_supply = _to_num(sim_summary.get("daily_green_supply_mwh"), 0.0, 3)
-    daily_green_ratio = _to_num(sim_summary.get("daily_green_ratio_pct"), 0.0, 2)
-    daily_storage_charge = _to_num(sim_summary.get("daily_storage_charge_mwh"), 0.0, 3)
-    daily_storage_discharge = _to_num(sim_summary.get("daily_storage_discharge_mwh"), 0.0, 3)
-    sim_method = _to_text(sim_summary.get("method"), "粗仿真（典型日）")
-
-    # 从前端数据结构中提取所需字段
-    # 用户需求
-    location = user_req.get('location', 'N/A')
-    business_type = user_req.get('businessType', user_req.get('business_type', 'N/A'))
-    planned_load = user_req.get('load', user_req.get('planned_load', 'N/A'))
-    if planned_load != 'N/A':
-        planned_load = f"{int(planned_load) * 1000} kW"  # 转换为kW
-    else:
-        planned_load = f"{planned_load} kW"
-    computing_power_density = user_req.get('density', user_req.get('computing_power_density', 'N/A'))
-    if computing_power_density != 'N/A':
-        computing_power_density = f"{computing_power_density} kW/机柜"
-    priority = user_req.get('priority', 'N/A')
-    green_energy_target = user_req.get('greenTarget', user_req.get('green_energy_target', 'N/A'))
-    if green_energy_target != 'N/A':
-        green_energy_target = f"{green_energy_target}%"
-    pue_target = user_req.get('pueTarget', user_req.get('pue_target', 'N/A'))
-
-    # 环境数据
-    climate = env_data.get('climate', {}) or {}
-    annual_temperature = climate.get('avgTemp', env_data.get('annual_temperature', 'N/A'))
-    if annual_temperature != 'N/A':
-        annual_temperature = f"{annual_temperature}°C"
-    annual_wind_speed = climate.get('windSpeed', env_data.get('annual_wind_speed', 'N/A'))
-    if annual_wind_speed != 'N/A':
-        annual_wind_speed = f"{annual_wind_speed} m/s"
-    annual_sunshine_hours = climate.get('solarRadiation', env_data.get('annual_sunshine_hours', 'N/A'))
-    if annual_sunshine_hours != 'N/A':
-        annual_sunshine_hours = f"{annual_sunshine_hours} 小时"
-    carbon_emission_factor = env_data.get('carbonFactor', env_data.get('carbon_emission_factor', 'N/A'))
-    if carbon_emission_factor != 'N/A':
-        carbon_emission_factor = f"{carbon_emission_factor} kgCO2/kWh"
-
-    # 能源方案
-    pv_capacity = energy_plan.get('pv_capacity', 'N/A')
-    if pv_capacity == 'N/A':
-        solar = energy_plan.get('solar', {}) or {}
-        pv_capacity = solar.get('capacity', 'N/A')
-    if pv_capacity != 'N/A':
-        pv_capacity = f"{pv_capacity} kW"
-    storage_capacity = energy_plan.get('storage_capacity', 'N/A')
-    storage_power = energy_plan.get('storage_power', 'N/A')
-    if storage_capacity == 'N/A' or storage_power == 'N/A':
-        storage = energy_plan.get('storage', {}) or {}
-        if storage_capacity == 'N/A':
-            storage_capacity = storage.get('energy', 'N/A')
-        if storage_power == 'N/A':
-            storage_power = storage.get('capacity', 'N/A')
-    if storage_capacity != 'N/A' and storage_power != 'N/A':
-        storage_system = f"{storage_capacity} kWh / {storage_power} kW"
-    else:
-        storage_system = "N/A"
-    ppa_ratio = energy_plan.get('ppa_ratio', 'N/A')
-    if ppa_ratio == 'N/A':
-        ppa = energy_plan.get('ppa', {}) or {}
-        ppa_ratio = ppa.get('ratio', 'N/A')
-    if ppa_ratio != 'N/A':
-        ppa_ratio = f"{ppa_ratio}%"
-    grid_ratio = energy_plan.get('grid_ratio', 'N/A')
-    if grid_ratio == 'N/A':
-        grid = energy_plan.get('grid', {}) or {}
-        grid_ratio = grid.get('ratio', 'N/A')
-    if grid_ratio != 'N/A':
-        grid_ratio = f"{grid_ratio}%"
-
-    # 制冷方案
-    cooling_technology = cooling_plan.get('cooling_technology', 'N/A')
-    if cooling_technology == 'N/A':
-        primary = cooling_plan.get('primary', '')
-        secondary = cooling_plan.get('secondary', '')
-        if primary and secondary:
-            cooling_technology = f"{primary} + {secondary}"
-        elif primary:
-            cooling_technology = primary
-    estimated_pue = cooling_plan.get('estimated_pue', cooling_plan.get('pue', 'N/A'))
-
-    # 财务分析
-    payback_years = financial.get('payback_period', financial.get('payback_years', 'N/A'))
-    if payback_years != 'N/A':
-        payback_years = f"{payback_years} 年"
-    irr = financial.get('irr', 'N/A')
-    if irr != 'N/A':
-        irr = f"{irr}%"
-    npv = financial.get('npv', 'N/A')
-    if npv != 'N/A':
-        npv = f"{npv} 万元"
-    lcoe = financial.get('lcoe', 'N/A')
-    if lcoe != 'N/A':
-        lcoe = f"{lcoe} 元/kWh"
-
-    # 仿真结果
-    green_ratio = simulation.get('greenRatio', 'N/A')
-    if green_ratio != 'N/A':
-        green_ratio = f"{green_ratio}%"
-    pue = simulation.get('pue', 'N/A')
-    storage_efficiency = simulation.get('storageEfficiency', 'N/A')
-    if storage_efficiency != 'N/A':
-        storage_efficiency = f"{storage_efficiency}%"
-
-    report = f"""# 数据中心绿电消纳规划设计建议书
-
-## 一、项目概况
-
-
-| 项目 | 数值 |
-|------|------|
-| 地理位置 | {user_req.get('location', 'N/A')} |
-| 业务类型 | {user_req.get('business_type', 'N/A')} |
-| 计划负荷 | {user_req.get('planned_load', 'N/A')} kW |
-| 算力密度 | {user_req.get('computing_power_density', 'N/A')} kW/机柜 |
-| 优先级 | {user_req.get('priority', 'N/A')} |
-| 绿电目标 | {user_req.get('green_energy_target', 'N/A')}% |
-| PUE 目标 | {user_req.get('pue_target', 'N/A')} |
-
-## 二、环境条件分析
-
-| 环境参数 | 数值 |
-|---------|------|
-| 年均温度 | {env_data.get('annual_temperature', 'N/A')}°C |
-| 年均风速 | {env_data.get('annual_wind_speed', 'N/A')} m/s |
-| 年日照时长 | {env_data.get('annual_sunshine_hours', 'N/A')} 小时 |
-| 碳排因子 | {env_data.get('carbon_emission_factor', 'N/A')} kgCO2/kWh |
-
-## 三、能源配比方案
-
-| 能源类型 | 配置 |
-|---------|------|
-| 分布式光伏 | {energy_plan.get('pv_capacity', 'N/A')} kW |
-| 储能系统 | {energy_plan.get('storage_capacity', 'N/A')} kWh / {energy_plan.get('storage_power', 'N/A')} kW |
-| 绿电长协 | {energy_plan.get('ppa_ratio', 'N/A')}% |
-| 电网调峰 | {energy_plan.get('grid_ratio', 'N/A')}% |
-
-## 四、制冷技术方案
-
-| 技术参数 | 数值 |
-|---------|------|
-| 制冷技术 | {cooling_technology} |
-| 预计年均 PUE | {estimated_pue} |
-
-## 五、财务分析
-
-| 财务指标 | 数值 |
-|---------|------|
-| 投资回收期 | {financial.get('payback_period', financial.get('payback_years', 'N/A'))} 年 |
-| 内部收益率 (IRR) | {financial.get('irr', 'N/A')}% |
-| 净现值 (NPV) | {financial.get('npv', 'N/A')} 万元 |
-| 平准化电力成本 (LCOE) | {financial.get('lcoe', 'N/A')} 元/kWh |
-
-## 六、24小时粗仿真摘要
-
-| 指标 | 数值 |
-|------|------|
-| 日IT用电量 | {sim_summary.get('daily_it_energy_mwh', 'N/A')} MWh |
-| 日绿电供给量 | {sim_summary.get('daily_green_supply_mwh', 'N/A')} MWh |
-| 日绿电占比 | {sim_summary.get('daily_green_ratio_pct', 'N/A')}% |
-| 储能日充电量 | {sim_summary.get('daily_storage_charge_mwh', 'N/A')} MWh |
-| 储能日放电量 | {sim_summary.get('daily_storage_discharge_mwh', 'N/A')} MWh |
-| 仿真方法 | {sim_summary.get('method', 'N/A')} |
-
----
-*本报告由 GreenDataCenter 智能规划系统自动生成*
-"""
+    if len(report.strip()) < 1000:
+        raise ValueError(
+            f"最终报告生成失败：报告长度不足 1000 字，当前为 {len(report.strip())} 字。"
+        )
 
     return report
 
@@ -259,13 +246,21 @@ def final_report_node(state: Dict[str, Any]) -> Dict[str, Any]:
     返回:
         更新后的状态，新增:
             - final_report: Markdown 格式最终报告
+            - final_report_path: 报告落盘路径
     """
     print("\n" + "=" * 60)
     print("📝 [最终报告生成节点] 开始工作")
     print("=" * 60)
 
     final_report = generate_final_report(state)
+    output_path = _output_report_path()
+    _ensure_output_dir(output_path)
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(final_report)
+
     print(f"✅ 最终报告生成完成，长度: {len(final_report)} 字符")
+    print(f"✅ 报告已写入: {output_path}")
 
     print("\n" + "=" * 60)
     print("✅ [最终报告生成节点] 工作完成")
@@ -274,4 +269,93 @@ def final_report_node(state: Dict[str, Any]) -> Dict[str, Any]:
     return {
         **state,
         "final_report": final_report,
+        "final_report_path": output_path,
     }
+
+
+if __name__ == "__main__":
+    print("=" * 80)
+    print("🧪 final_report_node 本地测试启动")
+    print("=" * 80)
+
+    if not LLM_API_KEY:
+        print("❌ 环境变量 LLM_API_KEY 未设置，无法调用 LLM。")
+        raise SystemExit(1)
+
+    if not TAVILY_API_KEY:
+        print("❌ 环境变量 TAVILY_API_KEY 未设置，无法调用 Tavily 工具。")
+        raise SystemExit(1)
+
+    test_state = {
+        "user_requirements": {
+            "location": "乌兰察布",
+            "business_type": "大模型训练",
+            "planned_area": 12000,
+            "planned_load": 8000,
+            "computing_power_density": 30,
+            "priority": "环保型",
+            "green_energy_target": 90,
+            "pue_target": 1.2,
+            "budget_constraint": 15000
+        },
+        "environmental_data": {
+            "annual_temperature": 5.5,
+            "annual_wind_speed": 4.8,
+            "annual_sunshine_hours": 3100,
+            "carbon_emission_factor": 0.62,
+            "province": "内蒙古"
+        },
+        "electricity_price": {
+            "peak_price": 0.93,
+            "high_price": 0.75,
+            "flat_price": 0.55,
+            "low_price": 0.26,
+            "deep_low_price": 0.20,
+            "max_price_diff": 0.73
+        },
+        "energy_plan": {
+            "pv_capacity": 5000,
+            "storage_capacity": 12000,
+            "storage_power": 3000,
+            "ppa_ratio": 45,
+            "grid_ratio": 20,
+            "estimated_green_ratio": 88
+        },
+        "cooling_plan": {
+            "cooling_technology": "间接蒸发冷却+液冷",
+            "estimated_pue": 1.18,
+            "predicted_wue": 1.45
+        },
+        "simulation_result": {
+            "summary": {
+                "daily_it_energy_mwh": 192,
+                "daily_green_supply_mwh": 156,
+                "daily_green_ratio_pct": 81.25,
+                "method": "典型日24小时粗仿真"
+            }
+        },
+        "review_result": {
+            "passed": True,
+            "score": 4.4,
+            "evaluator": "DeepSeek Reviewer"
+        },
+        "financial_analysis": {
+            "payback_period": 6.8,
+            "irr": 14.2,
+            "npv": 3260,
+            "lcoe": 0.43
+        },
+        "iteration_count": 1,
+        "max_iterations": 3,
+        "error_message": None,
+    }
+
+    try:
+        result_state = final_report_node(test_state)
+        report_path = result_state.get("final_report_path", _output_report_path())
+        print("✅ 测试通过：final_report_node 执行成功")
+        print(f"📄 报告路径：{report_path}")
+        print(f"📝 报告长度：{len(result_state.get('final_report', ''))} 字符")
+    except Exception as exc:
+        print(f"❌ 测试失败：{exc}")
+        raise
