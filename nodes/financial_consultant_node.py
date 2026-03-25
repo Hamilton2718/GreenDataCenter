@@ -6,6 +6,9 @@ Agent 5: 综合评价与投资决策专家 (Financial Consultant)
 适配 LangGraph 工作流版本。
 """
 
+import os
+import json
+import requests
 from datetime import datetime
 from typing import Dict, Any
 
@@ -20,6 +23,94 @@ PV_UNIT_COST = 3000                  # 元/kW
 STORAGE_UNIT_COST = 1500             # 元/kWh
 DISCOUNT_RATE = 0.08                 # 8%
 LIFETIME_YEARS = 20                  # 项目寿命期 20 年
+
+
+# ==================== LLM Client ====================
+class LLMClient:
+    def __init__(self):
+        self.api_key = os.getenv("SILICONFLOW_API_KEY", os.getenv("DASHSCOPE_API_KEY"))
+        if not self.api_key:
+            # 使用默认 API key 作为备用
+            self.api_key = "sk-77a4c286b27e4c06aff03cccc38cc9d1"
+        self.url = "https://api.siliconflow.cn/v1/chat/completions"
+        self.dashscope_url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+        self.model = os.getenv("SILICONFLOW_MODEL", "Qwen/Qwen2.5-7B-Instruct")
+        self.dashscope_model = "qwen-plus"
+        self.headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}"
+        }
+
+    def generate_report(self, prompt):
+        # 先尝试 SiliconFlow API
+        try:
+            data = {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": "你是一个绿色数据中心经济与投资分析专家。"},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.7,
+                "max_tokens": 2000
+            }
+            response = requests.post(self.url, headers=self.headers, data=json.dumps(data), timeout=30)
+            if response.status_code == 200:
+                result = response.json()
+                try:
+                    return result['choices'][0]['message']['content']
+                except (KeyError, IndexError):
+                    print("SiliconFlow API 返回格式异常，尝试使用 DashScope API")
+            else:
+                print(f"SiliconFlow API 调用失败，状态码: {response.status_code}，尝试使用 DashScope API")
+        except Exception as e:
+            print(f"SiliconFlow API 调用异常: {str(e)}，尝试使用 DashScope API")
+
+        # 尝试使用 DashScope API 作为备选
+        try:
+            data = {
+                "model": self.dashscope_model,
+                "messages": [
+                    {"role": "system", "content": "你是一个绿色数据中心经济与投资分析专家。"},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.7,
+                "max_tokens": 2000
+            }
+            response = requests.post(self.dashscope_url, headers=self.headers, data=json.dumps(data), timeout=30)
+            if response.status_code == 200:
+                result = response.json()
+                try:
+                    return result['choices'][0]['message']['content']
+                except (KeyError, IndexError):
+                    print("DashScope API 返回格式异常")
+            else:
+                print(f"DashScope API 调用失败，状态码: {response.status_code}")
+        except Exception as e:
+            print(f"DashScope API 调用异常: {str(e)}")
+
+        # 生成兜底报告，包含实际数据
+        lines = []
+        lines.append("# 财务分析报告")
+        lines.append("")
+        lines.append("## 报告概述")
+        lines.append("由于 API 调用失败，无法生成详细报告。以下为关键数据摘要：")
+        lines.append("")
+        lines.append("## 建设成本分析")
+        lines.append(f"- 总投资：{prompt.split('- 总建设成本: ')[1].split(' 万元')[0]} 万元")
+        lines.append("")
+        lines.append("## 年度运营成本分析")
+        lines.append(f"- 年运营成本：{prompt.split('- 年运营成本估算: ')[1].split(' 万元/年')[0]} 万元/年")
+        lines.append(f"- 年节省：{prompt.split('- 年节省: ')[1].split(' 万元/年')[0]} 万元/年")
+        lines.append("")
+        lines.append("## 碳排放与碳抵消分析")
+        lines.append(f"- 年碳减排：{prompt.split('- 年碳减排: ')[1].split(' 吨 CO2')[0]} 吨 CO₂")
+        lines.append("")
+        lines.append("## 综合经济评价与建议")
+        lines.append(f"- 投资回收期：{prompt.split('- 投资回收期: ')[1].split(' 年')[0]} 年")
+        lines.append(f"- 绿电比例：{prompt.split('- 绿电比例: ')[1].split('%')[0]}%")
+        lines.append("- 建议：请检查 API 配置后重试，或联系系统管理员。")
+        
+        return "\n".join(lines)
 
 
 def calculate_metrics_from_state(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -263,11 +354,45 @@ def financial_consultant_node(state: dict) -> dict:
         'cooling_system': financial_analysis.get('capex_total', 0) * 0.1  # 制冷占 10%
     }
     
+    # 生成 Markdown 报告
+    print("\n📝 正在生成财务分析报告...")
+    client = LLMClient()
+    prompt = f"""
+你是一个绿色数据中心经济评估专家。
+请基于以下经济和碳排数据，撰写一份数据中心经济型评估报告（Markdown 格式）：
+- 建设成本明细: {json.dumps(financial_analysis['capex_breakdown'], indent=2)}
+- 总建设成本: {financial_analysis['capex_total']} 万元
+- 年运营成本估算: {financial_analysis['opex_annual']} 万元/年
+- 年节省: {financial_analysis['annual_saving']} 万元/年
+- 投资回收期: {financial_analysis['payback_years']} 年
+- 年碳减排: {financial_analysis['emission_reduction']} 吨 CO2
+- 绿电比例: {financial_analysis['green_ratio']}%
+- 绿电目标: {financial_analysis['green_target']}%
+请包括以下内容：
+1. 报告概述
+2. 建设成本分析
+3. 年度运营成本分析
+4. 碳排放与碳抵消分析
+5. 综合经济评价与建议
+请用 Markdown 格式输出。
+"""
+    
+    report_md = client.generate_report(prompt)
+    
+    # 保存 Markdown 报告
+    with open("data_center_economic_evaluation.md", "w", encoding="utf-8") as f:
+        f.write(report_md)
+    
+    print("✅ Markdown 报告已生成: data_center_economic_evaluation.md")
+    
+    # 将报告添加到财务分析结果中
+    financial_analysis['report_md'] = report_md
+    
     print("\n" + "="*60)
     print("✅ [综合评价与投资决策专家] 工作完成")
     print("="*60)
     
-    # 返回更新后的状态（不再包含 final_report）
+    # 返回更新后的状态
     return {
         **state,
         "financial_analysis": financial_analysis

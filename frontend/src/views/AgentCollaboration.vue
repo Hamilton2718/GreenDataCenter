@@ -675,6 +675,19 @@
           </div>
         </el-card>
 
+        <!-- 财务分析报告 -->
+        <el-card shadow="hover" style="margin-bottom: 20px;">
+          <template #header>
+            <span>财务分析报告</span>
+          </template>
+          <div v-if="projectStore.financialAnalysis && projectStore.financialAnalysis.report_md" class="markdown-content">
+            <div v-html="renderMarkdown(projectStore.financialAnalysis.report_md)"></div>
+          </div>
+          <div v-else class="markdown-content">
+            <p>财务分析报告生成中...</p>
+          </div>
+        </el-card>
+
         <!-- 原始输出 -->
         <el-card shadow="hover" style="margin-bottom: 20px;">
           <template #header>
@@ -931,7 +944,7 @@ const fetchEnergyPlan = async () => {
     
     console.log('发送给后端的数据:', requestData)
     
-    const response = await fetch('/api/agent2/energy-plan', {
+    const response = await fetch('http://localhost:5004/api/agent2/energy-plan', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -1004,7 +1017,7 @@ const fetchCoolingPlan = async () => {
       }
     }
 
-    const response = await fetch('http://localhost:5001/api/agent3/cooling-plan', {
+    const response = await fetch('http://localhost:5004/api/agent3/cooling-plan', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -1285,7 +1298,7 @@ const submitToSimulation = async () => {
     // 调用后端API
     console.log('准备发送验证请求...')
     try {
-      const response = await fetch('http://localhost:5001/api/agent4/review', {
+      const response = await fetch('http://localhost:5004/api/agent4/review', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -1372,7 +1385,7 @@ const submitToFinancial = async () => {
     // 调用后端API
     console.log('准备发送财务分析请求...')
     try {
-      const response = await fetch('http://localhost:5001/api/agent5/financial', {
+      const response = await fetch('http://localhost:5004/api/agent5/financial', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

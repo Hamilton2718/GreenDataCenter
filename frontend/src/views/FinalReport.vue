@@ -146,7 +146,7 @@ const generateReport = async () => {
     console.log('发送给后端的报告生成数据:', requestData)
     
     // 调用后端API
-    const response = await fetch('http://localhost:5001/api/generate-report', {
+    const response = await fetch('http://localhost:5004/api/generate-report', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'

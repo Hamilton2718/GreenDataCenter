@@ -26,9 +26,10 @@ class SchemeReviewer:
     """
     
     def __init__(self):
+        api_key = os.environ.get("DASHSCOPE_API_KEY", "sk-4b521d7c953e4a2583b8cf747c96c399")
         self.llm = ChatOpenAI(
             model="deepseek-v3.2",
-            api_key="sk-77a4c286b27e4c06aff03cccc38cc9d1",
+            api_key=api_key,
             base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
         )
     

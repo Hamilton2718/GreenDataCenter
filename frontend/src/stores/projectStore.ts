@@ -190,6 +190,7 @@ export const useProjectStore = defineStore('project', () => {
     cooling_tech: '',
     curtailment_rate: 0,
     simulation_used: false,
+    report_md: '',
     capex_breakdown: {
       pv_system: 0,
       storage_system: 0,

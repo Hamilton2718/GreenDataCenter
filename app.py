@@ -359,6 +359,7 @@ def agent5_financial():
         logger.info("✅ [API] Agent 5 财务分析完成")
         logger.info(f"📊 总投资: {financial_analysis.get('capex_total', 0)} 万元")
         logger.info(f"📊 投资回收期: {financial_analysis.get('payback_years', 0)} 年")
+        logger.info(f"📊 报告生成状态: {'成功' if 'report_md' in financial_analysis else '失败'}")
         
         return jsonify({
             'success': True,
@@ -395,6 +396,6 @@ if __name__ == '__main__':
     logger.info("=" * 60)
     logger.info("🚀 GreenDataCenter 后端服务启动")
     logger.info("=" * 60)
-    logger.info("🌐 服务地址: http://localhost:5001")
+    logger.info("🌐 服务地址: http://localhost:5004")
     logger.info("📝 日志级别: INFO")
-    app.run(host='0.0.0.0', port=5001, debug=True)
+    app.run(host='0.0.0.0', port=5004, debug=True)

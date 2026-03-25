@@ -37,9 +37,10 @@ if TYPE_CHECKING:
 
 def _get_llm():
     """获取 LLM 实例（通义千问）"""
+    api_key = os.environ.get("DASHSCOPE_API_KEY", "sk-4b521d7c953e4a2583b8cf747c96c399")
     return ChatOpenAI(
         model="qwen-plus",
-        api_key="sk-77a4c286b27e4c06aff03cccc38cc9d1",
+        api_key=api_key,
         base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
     )
 

@@ -412,7 +412,7 @@ const refreshData = async () => {
     }
     
     // 发起流式请求
-    const response = await fetch('/api/stream/analyze', {
+    const response = await fetch('http://localhost:5004/api/stream/analyze', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -567,7 +567,7 @@ const startDesign = async () => {
     }
     
     // 发起流式请求
-    const response = await fetch('/api/stream/analyze', {
+    const response = await fetch('http://localhost:5004/api/stream/analyze', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
