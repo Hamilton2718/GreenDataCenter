@@ -1,0 +1,10 @@
+{
+  "python_version": "3.11",
+  "dependencies": [
+    "."
+  ],
+  "graphs": {
+    "green_datacenter": "./langgraph_app.py:graph"
+  },
+  "env": ".env"
+}

@@ -114,10 +114,14 @@ class CoolingAgent3:
         
         # 初始化 LLM（尝试）
         try:
+            llm_api_key = os.getenv("LLM_API_KEY", "")
+            if not llm_api_key:
+                raise ValueError("环境变量 LLM_API_KEY 未设置")
+
             self.llm = ChatTongyi(
                 model="qwen-plus", 
                 temperature=0.1,
-                dashscope_api_key=os.environ.get("DASHSCOPE_API_KEY", "sk-77a4c286b27e4c06aff03cccc38cc9d1")  # 从环境变量获取 API Key
+                dashscope_api_key=llm_api_key
             )
         except Exception as e:
             print(f"⚠️ LLM 初始化失败: {e}，将使用兜底参数")

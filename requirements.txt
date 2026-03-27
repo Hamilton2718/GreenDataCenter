@@ -1,0 +1,40 @@
+# Web API
+Flask>=3.0.0
+flask-cors>=4.0.0
+
+# Core runtime
+requests>=2.31.0
+python-dotenv>=1.0.0
+
+# LangGraph / LangChain stack
+langgraph>=0.2.0
+langgraph-cli>=0.1.60
+langchain>=1.0.0
+langchain-core>=0.3.0
+langchain-openai>=0.2.0
+langchain-community>=0.3.0
+langchain-text-splitters>=0.3.0
+langsmith>=0.1.120
+openai>=1.40.0
+anthropic>=0.34.0
+
+# Tooling for web search / agents
+tavily-python>=0.5.0
+langchain-tavily>=0.1.0
+
+# Data processing & simulation
+pandas>=2.2.0
+openpyxl>=3.1.0
+geopy>=2.4.0
+pvlib>=0.11.0
+tqdm>=4.66.0
+
+# Vector store & embeddings
+faiss-cpu>=1.8.0
+sentence-transformers>=3.0.0
+
+# Document loaders for RAG
+pypdf>=4.0.0
+unstructured>=0.15.0
+python-docx>=1.1.0
+docx2txt>=0.8

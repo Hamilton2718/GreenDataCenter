@@ -500,11 +500,23 @@ def save_workflow_graph(app, output_path: str = "output/workflow_graph.png") -> 
         os.makedirs(output_dir)
     
     try:
-        # 方法1: 使用 draw_mermaid_png (LangGraph 0.1+)
+        # 方法1: 修改 mermaid 图方向为横向 LR，并使用 draw_mermaid_png (LangGraph 0.1+)
         graph = app.get_graph()
-        png_data = graph.draw_mermaid_png()
-        with open(output_path, "wb") as f:
-            f.write(png_data)
+        try:
+            from langchain_core.runnables.graph_mermaid import draw_mermaid_png
+            
+            # 获取 mermaid 代码并将其中的从上到下(TD/TB)修改为从左到右(LR)
+            mermaid_text = graph.draw_mermaid()
+            mermaid_text = mermaid_text.replace("graph TD;", "graph LR;").replace("graph TD\n", "graph LR\n").replace("graph TB;", "graph LR;").replace("graph TB\n", "graph LR\n")
+            
+            png_data = draw_mermaid_png(mermaid_syntax=mermaid_text)
+            with open(output_path, "wb") as f:
+                f.write(png_data)
+        except ImportError:
+            # 如果导包失败，降级到默认绘制 (非横着)
+            png_data = graph.draw_mermaid_png()
+            with open(output_path, "wb") as f:
+                f.write(png_data)
         return True
     except Exception as e1:
         try:

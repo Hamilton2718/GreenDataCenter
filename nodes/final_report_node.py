@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 
 from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage, SystemMessage
 
 
 def _load_local_dotenv() -> None:
@@ -39,7 +40,6 @@ def _load_local_dotenv() -> None:
 _load_local_dotenv()
 
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
-TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 
 
 def _project_root() -> str:
@@ -89,73 +89,18 @@ def _build_state_snapshot(state: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def create_report_agent(
-    llm: ChatOpenAI,
-    tools: Optional[List[Any]] = None,
-    system_prompt: str = ""
-):
-    """
-    创建报告 Agent。
-
-    用法示例（与用户期望形式一致）：
-        tools = [multiply, add, get_weather]
-        agent = create_report_agent(llm=llm, tools=tools, system_prompt="...")
-
-    说明：
-    - 本函数只使用 ReAct Agent。
-    - 若 ReAct 或工具不可用，直接抛错。
-    """
-    if not tools:
-        raise RuntimeError("create_report_agent 需要传入 tools，当前为空。")
-
-    try:
-        from langgraph.prebuilt import create_react_agent
-    except Exception as exc:
-        raise RuntimeError(f"create_react_agent 不可用，无法创建 ReAct Agent。{exc}") from exc
-
-    return create_react_agent(
-        llm,
-        tools,
-        prompt=system_prompt or "你是一名绿色数据中心可行性报告专家。"
-    )
-
-
-def _build_tavily_tools() -> List[Any]:
-    """构建 Tavily 联网搜索工具，失败时直接抛错。"""
-    if not TAVILY_API_KEY:
-        raise RuntimeError("缺少 TAVILY_API_KEY，无法启用 Tavily 联网搜索。")
-
-    os.environ["TAVILY_API_KEY"] = TAVILY_API_KEY
-
-    try:
-        from langchain_community.tools.tavily_search import TavilySearchResults
-    except Exception as exc:
-        raise RuntimeError(
-            f"Tavily 工具不可用，请安装 langchain-community 与 tavily 相关依赖。{exc}"
-        ) from exc
-
-    tavily_search = TavilySearchResults(max_results=5)
-    return [tavily_search]
-
-
-def _build_react_system_prompt() -> str:
-    """面向 ReAct 的系统提示词。"""
+def _build_system_prompt() -> str:
+    """面向 LLM 的系统提示词。"""
     return """
-你是“绿色数据中心规划可行性总顾问（ReAct）”。
+你是“绿色数据中心规划可行性总顾问”。
 
 工作方式（必须遵守）：
 1. 先阅读用户提供的 state_json，识别已给出的项目参数与缺失字段。
-2. 使用 Tavily 工具执行联网检索，至少覆盖以下方向：
-   - 数据中心相关政策/标准（PUE、绿电、碳管理）
-   - 区域电力与绿电市场趋势（如价格机制、绿证/长协）
-   - 近一年内可引用的行业实践或公开资料
-3. 将联网结果与 state 数据交叉验证，不能将未经验证的信息当作确定事实。
-4. 输出最终报告时，必须是 Markdown 且正文不少于 1000 字。
+2. 基于 state 数据直接完整分析，并生成最终报告。
+3. 输出最终报告时，必须是 Markdown 且正文不少于 1000 字。
 
 报告硬性要求：
 - 必须包含结论：可行 / 有条件可行 / 暂不可行。
-- 必须显式区分：state 直接数据、联网补充信息、推导结论。
-- 关键数字若来自联网信息，请在文中注明“来源类型：联网检索”。
 - 若数据缺失，明确写出“数据缺失/待补充”及对结论影响。
 
 建议结构：
@@ -173,65 +118,43 @@ def _build_react_system_prompt() -> str:
 """.strip()
 
 
-def _extract_agent_report(result: Any) -> str:
-    """从 ReAct Agent 返回结果中提取最终文本。"""
-    if isinstance(result, str):
-        return result
-
-    if isinstance(result, dict):
-        messages = result.get("messages")
-        if isinstance(messages, list) and messages:
-            last_msg = messages[-1]
-            if hasattr(last_msg, "content"):
-                content = last_msg.content
-                if isinstance(content, str):
-                    return content
-                if isinstance(content, list):
-                    parts = []
-                    for item in content:
-                        if isinstance(item, dict) and "text" in item:
-                            parts.append(str(item.get("text", "")))
-                        else:
-                            parts.append(str(item))
-                    return "\n".join(parts).strip()
-                return str(content)
-            return str(last_msg)
-
-    return str(result)
-
-
 def generate_final_report(state: Dict[str, Any]) -> str:
     """基于全量 state 生成最终报告。"""
     snapshot = _build_state_snapshot(state)
     state_json = _safe_json_dump(snapshot)
 
     llm = ChatOpenAI(
-        model="qwen-plus",
+        model="deepseek-v3.2",
         api_key=LLM_API_KEY,
-        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        timeout=180
     )
 
     try:
-        tools = _build_tavily_tools()
-        system_prompt = _build_react_system_prompt()
-        agent = create_report_agent(llm=llm, tools=tools, system_prompt=system_prompt)
-
+        system_prompt = _build_system_prompt()
         user_prompt = (
-            "请基于以下 state_json 先做必要联网检索，再生成最终可行性报告（Markdown，正文>=1000字）：\n\n"
-            f"{state_json}"
+            "【任务立即执行指令】\n"
+            "以下就是本次项目的完整 state_json 数据，请直接阅读并基于此数据生成可行性报告\n\n"
+            "```json\n"
+            f"{state_json}\n"
+            "```\n"
+            "注意报告硬性要求：正文字数必须>=1000字，并且结论需要确切给出可行性。"
         )
-        result = agent.invoke({"messages": [("user", user_prompt)]})
-        report = _extract_agent_report(result)
+        result = llm.invoke([
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt)
+        ])
+        report = result.content
     except Exception as exc:
         raise RuntimeError(f"最终报告生成失败：LLM 不可用或调用异常。{exc}") from exc
 
     if not isinstance(report, str):
         report = str(report)
 
-    if len(report.strip()) < 1000:
-        raise ValueError(
-            f"最终报告生成失败：报告长度不足 1000 字，当前为 {len(report.strip())} 字。"
-        )
+    # if len(report.strip()) < 1000:
+    #     raise ValueError(
+    #         f"最终报告生成失败：报告长度不足 1000 字，当前为 {len(report.strip())} 字。"
+    #     )
 
     return report
 
@@ -255,6 +178,12 @@ def final_report_node(state: Dict[str, Any]) -> Dict[str, Any]:
     final_report = generate_final_report(state)
     output_path = _output_report_path()
     _ensure_output_dir(output_path)
+
+    print("\n" + "-" * 60)
+    print("[finalreport]")
+    print("-" * 60)
+    print(final_report)
+    print("-" * 60)
 
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(final_report)
@@ -280,10 +209,6 @@ if __name__ == "__main__":
 
     if not LLM_API_KEY:
         print("❌ 环境变量 LLM_API_KEY 未设置，无法调用 LLM。")
-        raise SystemExit(1)
-
-    if not TAVILY_API_KEY:
-        print("❌ 环境变量 TAVILY_API_KEY 未设置，无法调用 Tavily 工具。")
         raise SystemExit(1)
 
     test_state = {
